@@ -1,0 +1,6 @@
+# api.osontarget.uz uchun avtomatik HTTPS (Let's Encrypt).
+# Shart: api.osontarget.uz DNS A yozuvi shu server IP'siga ishora qilishi va
+# 80/443 portlar ochiq bo'lishi kerak — shundagina Caddy sertifikat oladi.
+api.osontarget.uz {
+	reverse_proxy backend:4000
+}

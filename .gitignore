@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+
+# Sirlar (bot token, Ads API kaliti, JWT va ichki sir) faqat .env'da turadi
+.env
+.env.*
+!*.example
+
+# Prisma generatsiya qilgan klient — `npm install` / `npm run build` qayta yaratadi
+src/generated/

@@ -1,0 +1,59 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  CLIENT // reklama beruvchi mijoz
+  ADMIN // platforma administratori
+}
+
+// ─── Foydalanuvchilar ────────────────────────────────────────────────────────
+
+/// Telegram Login Widget orqali kirgan foydalanuvchi.
+model User {
+  id          String    @id @default(cuid())
+  /// Telegram user ID — 2^31 dan oshib ketadi, shuning uchun BigInt.
+  telegramId  BigInt    @unique
+  firstName   String
+  lastName    String?
+  username    String?
+  photoUrl    String?
+  role        Role      @default(CLIENT)
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  sessions Session[]
+}
+
+/// Refresh token sessiyasi. Tokenning o'zi saqlanmaydi — faqat SHA-256 xeshi.
+model Session {
+  id        String    @id @default(cuid())
+  userId    String
+  /// Bitta login'dan tug'ilgan barcha (rotatsiya qilingan) tokenlar oilasi.
+  /// Logout yoki eski token qayta ishlatilsa butun oila bekor qilinadi.
+  familyId  String
+  tokenHash String    @unique
+  expiresAt DateTime
+  /// Token yangisiga almashtirilgan payt — grace oynasi shundan hisoblanadi.
+  rotatedAt DateTime?
+  revokedAt DateTime?
+  userAgent String?
+  ip        String?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+}

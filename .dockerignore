@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+src/generated
+*.log
+
+# Sirlar image ichiga tushmasin — konteynerga env_file orqali beriladi
+.env
+.env.*
+*.tsbuildinfo
