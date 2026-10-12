@@ -76,6 +76,26 @@ nginx -t && systemctl reload nginx
 certbot --nginx -d api.osontarget.uz
 ```
 
+## Optimizatsiya
+
+`ADS_SYNC_ENABLED=true` bo'lsa, backend har 5 daqiqada Telegram Ads'dan hisob holatini, e'lonlarni va
+5 daqiqalik statistikani bazaga oladi (`src/ads/ads-sync.service.ts`). Birinchi sinxronlashda oxirgi
+72 soat yuklanadi, statistika 30 kun saqlanadi. Har sinxronlashdan keyin qoidalar
+(`src/ads/optimizer/rules.ts`) faol e'lonlarni baholaydi:
+
+| Tavsiya     | Qachon                                                                       | Amal                       |
+| ----------- | ---------------------------------------------------------------------------- | -------------------------- |
+| To'xtatish  | ≥0.5 sarfdan keyin harakat narxi (CPA) hisob medianasidan 2× qimmat yoki 100+ bosishda 0 harakat | `editAd is_paused`         |
+| Budjet      | budjet 12 soatdan kamga yetadi (oxirgi 24 soat sarfi bo'yicha)                | `increaseAdBudget` (3 kunlik sarf) |
+| CPM         | oxirgi 6 soatdagi ko'rishlar kechagi shu vaqtdagidan 80% kam                  | `editAd cpm` +10%, `ADS_MAX_CPM`gacha |
+
+Hozir **tavsiya rejimi**: tavsiya admin sahifasida (`/dashboard/ads`) chiqadi, adminlarga bot orqali
+xabar boradi, pul o'zgartiruvchi amalni faqat admin "Qo'llash" bilan tasdiqlaydi. Qo'llashdan oldin
+e'lonning hozirgi holati Telegram'dan qayta olinadi — tavsiyadan keyin o'zgargan bo'lsa, amal bajarilmaydi.
+Budjet `idempotency_key` bilan o'tkaziladi. Rad etilgan tavsiya 24 soat qayta taklif qilinmaydi.
+
+Admin — `ADMIN_TELEGRAM_IDS`dagi foydalanuvchi (login paytida rol beriladi).
+
 ## Buyruqlar
 
 | Buyruq              | Nima qiladi                                                                  |

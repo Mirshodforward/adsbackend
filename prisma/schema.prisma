@@ -57,3 +57,88 @@ model Session {
   @@index([userId])
   @@index([familyId])
 }
+
+// ─── Telegram Ads ────────────────────────────────────────────────────────────
+
+/// Telegram Ads'dagi e'lonning bazadagi nusxasi — sinxronlash har 5 daqiqada yangilaydi.
+/// Pul qiymatlari hisob valyutasida (hozir TON).
+model Ad {
+  /// Telegram ad_id (API: 32-bit butun son).
+  adId             Int      @id
+  title            String
+  text             String
+  promoteUrl       String
+  placement        String
+  /// stopped | ready_for_review | in_review | declined | active | on_hold
+  status           String
+  isPaused         Boolean
+  /// Masalan start_bot, join — CPA shu harakat bo'yicha hisoblanadi.
+  actionType       String?
+  currency         String
+  cpm              Decimal  @db.Decimal(18, 5)
+  dailyBudgetLimit Decimal? @db.Decimal(18, 5)
+  spentBudget      Decimal  @db.Decimal(18, 5)
+  remainingBudget  Decimal  @db.Decimal(18, 5)
+  views            Int
+  clicks           Int
+  actions          Int
+  declineReason    String?
+  /// API javobining o'zi — yangi maydonlar sxemaga qo'shilmaguncha ham saqlanadi.
+  raw              Json
+  createdDate      DateTime
+  syncedAt         DateTime @updatedAt
+
+  stats           AdStat[]
+  recommendations Recommendation[]
+}
+
+/// 5 daqiqalik statistika (getAdStats, interval=300). `fromTime` — oraliq boshi.
+model AdStat {
+  adId     Int
+  fromTime DateTime
+  views    Int
+  clicks   Int
+  actions  Int
+  spent    Decimal  @db.Decimal(18, 5)
+
+  ad Ad @relation(fields: [adId], references: [adId], onDelete: Cascade)
+
+  @@id([adId, fromTime])
+}
+
+enum RecommendationKind {
+  ADD_BUDGET // budjet tez orada tugaydi
+  PAUSE // samarasiz e'lon
+  RAISE_CPM // auksionda yutqazmoqda — kam ko'rsatilmoqda
+}
+
+enum RecommendationStatus {
+  PENDING
+  APPLIED
+  DISMISSED
+  EXPIRED // sharoit o'zgardi yoki e'lon boshqa joyda o'zgartirildi
+  FAILED
+}
+
+/// Optimizator tavsiyasi. Qo'llanganlari — pulni o'zgartirgan amallar jurnali ham.
+model Recommendation {
+  id          String               @id @default(cuid())
+  adId        Int
+  kind        RecommendationKind
+  status      RecommendationStatus @default(PENDING)
+  /// Admin o'qiydigan izoh, raqamlar bilan.
+  reason      String
+  /// Bajariladigan o'zgarish: {"amount": 0.96} yoki {"cpm": 0.25}.
+  change      Json
+  /// Tavsiya paytidagi qiymatlar — qo'llashdan oldin hozirgi holat bilan solishtiriladi.
+  snapshot    Json
+  error       String?
+  createdAt   DateTime             @default(now())
+  decidedAt   DateTime?
+  decidedById String?
+
+  ad Ad @relation(fields: [adId], references: [adId], onDelete: Cascade)
+
+  @@index([status])
+  @@index([adId, kind, status])
+}

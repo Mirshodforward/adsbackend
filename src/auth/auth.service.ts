@@ -78,12 +78,17 @@ export class AuthService {
 
     const tg = check.user;
     // Ism, username va rasm Telegram'da o'zgarishi mumkin — har kirishda yangilaymiz.
+    const isAdmin = this.config
+      .get('ADMIN_TELEGRAM_IDS', { infer: true })
+      .includes(tg.id.toString());
     const profile = {
       firstName: tg.firstName,
       lastName: tg.lastName,
       username: tg.username,
       photoUrl: tg.photoUrl,
       lastLoginAt: new Date(),
+      // Faqat ko'taradi: ro'yxatdan chiqarilgan admin rolini bazada qo'lda o'zgartiriladi.
+      ...(isAdmin && { role: 'ADMIN' as const }),
     };
     const user = await this.db.user.upsert({
       where: { telegramId: tg.id },

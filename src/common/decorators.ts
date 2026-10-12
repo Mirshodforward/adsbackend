@@ -18,6 +18,10 @@ export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 export const ALLOW_DIRECT_KEY = 'allowDirect';
 export const AllowDirect = () => SetMetadata(ALLOW_DIRECT_KEY, true);
 
+/** `@AdminOnly()` — faqat ADMIN roli (rol har so'rovda bazadan olinadi). */
+export const ADMIN_ONLY_KEY = 'adminOnly';
+export const AdminOnly = () => SetMetadata(ADMIN_ONLY_KEY, true);
+
 /** `@Auth() ctx: AuthContext` — guard biriktirgan joriy foydalanuvchi. */
 export const Auth = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): AuthContext =>

@@ -41,6 +41,24 @@ const envSchema = z
 
     // ads.telegram.org/account/api — platformaning reklama hisobi tokeni.
     TELEGRAM_ADS_API_KEY: z.string().min(20),
+
+    // E'lonlar va statistikani har 5 daqiqada sinxronlash. Faqat serverda
+    // yoqiladi: lokal ishlash va testlar haqiqiy API'ni bezovta qilmasin.
+    ADS_SYNC_ENABLED: z.stringbool().default(false),
+    // RAISE_CPM tavsiyasi bundan oshirmaydi (hisob valyutasida).
+    ADS_MAX_CPM: z.coerce.number().positive().default(0.5),
+    // Shu Telegram ID'lar login paytida ADMIN bo'ladi (vergul bilan).
+    ADMIN_TELEGRAM_IDS: z
+      .string()
+      .default('')
+      .transform((v) =>
+        v
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean),
+      ),
+    // Bot xabaridagi havolalar uchun.
+    FRONTEND_URL: z.url().default('https://osontarget.uz'),
   })
   // Sirsiz production — hamma uchun ochiq backend. Buni jim o'tkazib yubormaymiz.
   .refine((env) => env.NODE_ENV !== 'production' || env.INTERNAL_API_SECRET, {

@@ -1,25 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { createHash, createHmac, randomInt } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { INTERNAL_SECRET, widgetPayload } from './helpers.js';
 
-// vitest.config.e2e.ts `env` orqali .env'dagi qiymatlarni almashtiradi.
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN as string;
-const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET as string;
 // Haqiqiy foydalanuvchilar bilan to'qnashmaydigan id; afterAll'da o'chiriladi.
 const TELEGRAM_ID = 9_900_000_000 + randomInt(1_000_000);
-
-function widgetPayload(fields: Record<string, string | number>) {
-  const checkString = Object.keys(fields)
-    .sort()
-    .map((k) => `${k}=${fields[k]}`)
-    .join('\n');
-  const secret = createHash('sha256').update(BOT_TOKEN).digest();
-  const hash = createHmac('sha256', secret).update(checkString).digest('hex');
-  return { ...fields, hash };
-}
 
 describe('Auth (e2e)', () => {
   let app: INestApplication;

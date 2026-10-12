@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { ScheduleModule } from '@nestjs/schedule';
+import { AdsModule } from './ads/ads.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { InternalSecretGuard } from './common/guards/internal-secret.guard.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
@@ -25,9 +27,11 @@ import { TelegramAdsModule } from './telegram-ads/telegram-ads.module.js';
         verifyOptions: { algorithms: ['HS256'] },
       }),
     }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     AuthModule,
     TelegramAdsModule,
+    AdsModule,
   ],
   controllers: [HealthController],
   // Tartib muhim: avval "so'rov BFF'danmi", keyin "foydalanuvchi kim".

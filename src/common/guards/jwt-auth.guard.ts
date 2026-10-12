@@ -4,7 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { AuthContext, JwtPayload } from '../auth-context.js';
-import { IS_PUBLIC_KEY } from '../decorators.js';
+import { ADMIN_ONLY_KEY, IS_PUBLIC_KEY } from '../decorators.js';
 import { fail } from '../http.js';
 
 @Injectable()
@@ -43,6 +43,12 @@ export class JwtAuthGuard implements CanActivate {
       select: { id: true, role: true, isActive: true },
     });
     if (!user?.isActive) fail('Hisobingiz faol emas', 401);
+
+    const adminOnly = this.reflector.getAllAndOverride<boolean>(
+      ADMIN_ONLY_KEY,
+      [ctx.getHandler(), ctx.getClass()],
+    );
+    if (adminOnly && user.role !== 'ADMIN') fail("Ruxsat yo'q", 403);
 
     req.auth = { userId: user.id, role: user.role };
     return true;
