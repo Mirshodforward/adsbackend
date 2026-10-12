@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
-# ─── Serverda backendni yangilash ────────────────────────────────────────────
-# Ishlatish (server ichida, repo'ning backend/ papkasida):
+# ─── Serverda backendni yangilash (pm2 + nginx) ──────────────────────────────
+# Ishlatish (appuser sifatida, repo papkasida):
 #
-#   ./deploy.sh           # git pull → build → migratsiya → restart → health check
+#   ./deploy.sh           # git pull → npm ci → build → migratsiya → pm2 reload → health check
 #   ./deploy.sh --force   # yangi commit bo'lmasa ham (masalan, birinchi deploy)
 #
-# Health check yiqilsa — kod oldingi commitga qaytadi. Migratsiyalar
-# QAYTARILMAYDI: shuning uchun ular faqat qo'shuvchi bo'lsin (ustun o'chirish
-# alohida, keyingi relizda).
+# Migratsiya yoki health check yiqilsa — kod oldingi commitga qaytadi va qayta
+# build qilinadi. Migratsiyalar QAYTARILMAYDI: ular faqat qo'shuvchi bo'lsin.
 set -euo pipefail
 
 BRANCH="${BRANCH:-main}"
-COMPOSE=(docker compose -f docker-compose.prod.yml)
 HEALTH_RETRIES=20
 HEALTH_DELAY=3
 
@@ -30,14 +28,24 @@ ok()  { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
 err() { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; }
 
 [[ -f .env ]] || { err ".env topilmadi — .env.production.example dan nusxa oling"; exit 1; }
+PORT="$(grep -E '^PORT=' .env | cut -d= -f2)"
+PORT="${PORT:-4000}"
+
+# Server kichik va boshqa ilovalar bilan umumiy: build ularni bo'g'ib
+# qo'ymasligi uchun past ustuvorlikda va V8 heap chegarasi bilan.
+build() {
+  nice -n 10 npm ci --no-audit --no-fund
+  NODE_OPTIONS=--max-old-space-size=512 nice -n 10 npm run build
+}
+
+start() {
+  pm2 startOrReload ecosystem.config.cjs --update-env
+  pm2 save >/dev/null
+}
 
 health_check() {
   for i in $(seq 1 "$HEALTH_RETRIES"); do
-    if "${COMPOSE[@]}" exec -T backend node -e "
-      fetch('http://127.0.0.1:4000/api/health')
-        .then(r => process.exit(r.ok ? 0 : 1))
-        .catch(() => process.exit(1))
-    " >/dev/null 2>&1; then
+    if curl -fsS "http://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then
       ok "Health OK (${i}-urinish)"
       return 0
     fi
@@ -46,12 +54,12 @@ health_check() {
   return 1
 }
 
-release() {
-  "${COMPOSE[@]}" build backend
-  # Migratsiya eski konteyner hali ishlab turganda bajariladi: yiqilsa,
-  # ishlayotgan versiyaga tegilmaydi.
-  "${COMPOSE[@]}" run --rm backend npx prisma migrate deploy
-  "${COMPOSE[@]}" up -d
+rollback() {
+  err "$1 — ${PREV_COMMIT:0:7} ga qaytilmoqda"
+  git reset --hard "$PREV_COMMIT"
+  build
+  start
+  exit 1
 }
 
 # ─── 1. Kod ──────────────────────────────────────────────────────────────────
@@ -66,18 +74,18 @@ if [[ "$PREV_COMMIT" == "$NEW_COMMIT" && "$FORCE" != true ]]; then
 fi
 git merge --ff-only "origin/$BRANCH"
 
-# ─── 2. Build, migratsiya, ishga tushirish ───────────────────────────────────
-log "Build va migratsiya"
-release
+# ─── 2. Build va migratsiya ──────────────────────────────────────────────────
+log "Build"
+build
 
-# ─── 3. Tekshiruv / rollback ─────────────────────────────────────────────────
+log "Migratsiya"
+npx prisma migrate deploy || rollback "Migratsiya yiqildi"
+
+# ─── 3. Ishga tushirish va tekshiruv ─────────────────────────────────────────
+log "pm2 reload"
+start
+
 log "Health check"
-if ! health_check; then
-  err "Health check yiqildi — ${PREV_COMMIT:0:7} ga qaytilmoqda"
-  "${COMPOSE[@]}" logs --tail=50 backend || true
-  git reset --hard "$PREV_COMMIT"
-  "${COMPOSE[@]}" up -d --build backend
-  exit 1
-fi
+health_check || rollback "Health check yiqildi"
 
 ok "Deploy tugadi: $(git log -1 --format='%h %s')"

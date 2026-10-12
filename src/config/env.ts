@@ -6,6 +6,12 @@ const envSchema = z
       .enum(['development', 'production', 'test'])
       .default('development'),
     PORT: z.coerce.number().int().positive().default(4000),
+    // nginx ortidagi serverda 127.0.0.1 — port tashqi interfeysda ochilmaydi.
+    // Bo'sh bo'lsa barcha interfeyslarda tinglaydi.
+    HOST: z
+      .string()
+      .optional()
+      .transform((v) => v || undefined),
     DATABASE_URL: z.string().min(1),
 
     JWT_ACCESS_SECRET: z.string().min(32, "kamida 32 belgi bo'lishi kerak"),

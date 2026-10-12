@@ -1,10 +1,11 @@
 # OsonTarget — backend
 
-NestJS 12 (ESM) · Prisma 7 · PostgreSQL 17 · zod. Serverda Docker ichida ishlaydi: `api.osontarget.uz`.
-Frontend: [adsfrontend](https://github.com/Mirshodforward/adsfrontend) (Vercel, `osontarget.uz`).
+NestJS 12 (ESM) · Prisma 7 · PostgreSQL 16+ · zod. Production: `api.osontarget.uz`
+(pm2 + nginx + certbot). Frontend: [adsfrontend](https://github.com/Mirshodforward/adsfrontend)
+(Vercel, `osontarget.uz`).
 
 ```
-Brauzer ──► Vercel (Next.js BFF, httpOnly cookie) ──► Caddy (HTTPS) ──► NestJS ──► Postgres
+Brauzer ──► Vercel (Next.js BFF, httpOnly cookie) ──► nginx (HTTPS) ──► NestJS 127.0.0.1:4400 ──► Postgres
                          x-internal-secret ─────────┘
 ```
 
@@ -25,46 +26,55 @@ npm run start:dev         # http://localhost:4000/api
 `INTERNAL_API_SECRET` lokalda bo'sh bo'lishi mumkin, productionda esa majburiy. Lokal sinov uchun
 alohida bot tokenidan foydalaning: prod bot `osontarget.uz` domeniga bog'langan.
 
-## Deploy (server)
+## Production server
 
-### Bir martalik tayyorgarlik
+Ilova `appuser` nomidan pm2 orqali `/home/appuser/osontarget-backend` papkasida ishlaydi va faqat
+`127.0.0.1:4400`da tinglaydi. Tashqariga nginx orqali chiqadi. Baza — tizimdagi PostgreSQL.
 
-1. Sirlarni yarating:
-   ```bash
-   openssl rand -hex 32      # INTERNAL_API_SECRET — Vercel'da ham AYNAN shu qiymat
-   openssl rand -hex 32      # POSTGRES_PASSWORD (hex — DATABASE_URL'ni buzmaydi)
-   openssl rand -base64 48   # JWT_ACCESS_SECRET
-   ```
-2. DNS: `api.osontarget.uz` → A yozuv → server IP.
-3. Server: Linux, Docker (compose plugin bilan), 80 va 443 portlar ochiq. Repo private bo'lgani uchun
-   serverga faqat o'qish huquqli deploy key qo'shing (GitHub → Settings → Deploy keys).
+### Yangilash
 
 ```bash
-git clone git@github.com:Mirshodforward/adsbackend.git osontarget-backend
-cd osontarget-backend
-cp .env.production.example .env   # qiymatlarni to'ldiring
-./deploy.sh --force               # birinchi deploy
+sudo -iu appuser
+cd ~/osontarget-backend && ./deploy.sh
 ```
 
-Keyingi yangilanishlar: `./deploy.sh`. Skript ketma-ketligi:
+Skript ketma-ketligi:
 
 1. `git pull`;
-2. image build;
-3. `prisma migrate deploy` (eski versiya hali ishlab turganda);
-4. restart;
-5. health check — yiqilsa, kod oldingi commitga qaytadi.
+2. `npm ci` va build (past ustuvorlikda — server boshqa ilovalar bilan umumiy);
+3. `prisma migrate deploy`;
+4. `pm2 reload`;
+5. health check.
 
-Migratsiyalar orqaga qaytarilmaydi, shuning uchun ular faqat qo'shuvchi bo'lsin.
+Migratsiya yoki health check yiqilsa, kod oldingi commitga qaytadi. Migratsiyalar orqaga
+qaytarilmaydi, shuning uchun ular faqat qo'shuvchi bo'lsin.
 
 ```bash
-curl https://api.osontarget.uz/api/health        # {"ok":true}
-curl https://api.osontarget.uz/api/auth/me       # 403 — sirsiz so'rov o'tmaydi
-docker compose -f docker-compose.prod.yml exec backend npm run ads:check
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_dump -U osontarget osontarget | gzip > backup-$(date +%F).sql.gz   # zaxira
+pm2 logs osontarget-api                       # loglar
+curl http://127.0.0.1:4400/api/health         # {"ok":true}
+npm run ads:check                             # Ads API kaliti va hisob holati
 ```
 
-Boshqa (managed) Postgres ishlatilsa, `docker-compose.prod.yml`dagi izohga qarang.
+### Birinchi o'rnatish (bir marta)
+
+```bash
+# root: baza (parol — openssl rand -hex 32)
+sudo -u postgres psql -c "CREATE ROLE osontarget LOGIN PASSWORD '<parol>'"
+sudo -u postgres psql -c "CREATE DATABASE osontarget OWNER osontarget"
+
+# appuser: kod va sozlamalar
+sudo -iu appuser
+git clone https://github.com/Mirshodforward/adsbackend.git ~/osontarget-backend
+cd ~/osontarget-backend
+cp .env.production.example .env && chmod 600 .env   # to'ldiring
+./deploy.sh --force
+
+# root: nginx va HTTPS (DNS: api.osontarget.uz → server IP)
+cp /home/appuser/osontarget-backend/nginx/api.osontarget.uz.conf /etc/nginx/sites-available/api.osontarget.uz
+ln -s /etc/nginx/sites-available/api.osontarget.uz /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+certbot --nginx -d api.osontarget.uz
+```
 
 ## Buyruqlar
 

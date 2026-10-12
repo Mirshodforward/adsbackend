@@ -15,8 +15,11 @@ async function bootstrap() {
 
   const config = app.get<ConfigService<Env, true>>(ConfigService);
   const port = config.get('PORT', { infer: true });
-  await app.listen(port);
-  new Logger('Bootstrap').log(`Backend: http://localhost:${port}/api`);
+  const host = config.get('HOST', { infer: true });
+  await (host ? app.listen(port, host) : app.listen(port));
+  new Logger('Bootstrap').log(
+    `Backend: http://${host ?? 'localhost'}:${port}/api`,
+  );
 }
 
 await bootstrap();
