@@ -6,7 +6,11 @@ import { AppModule } from './app.module.js';
 import type { Env } from './config/env.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody — to'lov webhook'lari imzoni xom tana ustidan tekshiradi
+  // (payments/paylinker/paylinker-webhook.controller.ts).
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
 
   // Mijoz IP'si `req.ip`dan emas, BFF uzatgan header'dan olinadi
   // (qarang: common/client-meta.ts) — shuning uchun `trust proxy` kerak emas.

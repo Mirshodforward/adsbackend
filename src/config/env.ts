@@ -59,6 +59,39 @@ const envSchema = z
       ),
     // Bot xabaridagi havolalar uchun.
     FRONTEND_URL: z.url().default('https://osontarget.uz'),
+
+    // ─── To'lovlar: balansni to'ldirish (PAYMENTS.md) ───────────────────
+    // Paylinker → OsonTarget loyihasi. Kalit bo'sh bo'lsa to'lov o'chiq:
+    // usullar ro'yxati bo'sh qaytadi, lokal ishlash buzilmaydi.
+    PAYLINKER_API_BASE: z.url().default('https://api.paylinker.uz'),
+    PAYLINKER_API_KEY: z
+      .string()
+      .optional()
+      .transform((v) => v || undefined),
+    // Webhook imzosi (`whsec_…`). Bo'sh bo'lsa webhook 503 qaytaradi.
+    PAYLINKER_WEBHOOK_SECRET: z
+      .string()
+      .optional()
+      .transform((v) => v || undefined),
+    // Paynet ilova havolasidagi `m` (Paynet bergan). Bo'sh bo'lsa Paynet ko'rinmaydi.
+    PAYNET_APP_MERCHANT: z
+      .union([z.literal(''), z.string().regex(/^\d+$/, 'faqat raqam')])
+      .optional()
+      .transform((v) => v || undefined),
+    // Yoqilgan usullar (vergul bilan): CLICK, PAYME, UZUM, PAYNET.
+    PAYMENT_METHODS: z
+      .string()
+      .default('CLICK,PAYME,UZUM,PAYNET')
+      .transform((v) =>
+        v
+          .split(',')
+          .map((m) => m.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    TOPUP_MIN_UZS: z.coerce.number().int().positive().default(10_000),
+    TOPUP_MAX_UZS: z.coerce.number().int().positive().default(2_500_000),
+    // Mijoz to'lovga qo'shimcha to'laydigan komissiya (%). 0 — komissiyani biz ko'taramiz.
+    TOPUP_FEE_PERCENT: z.coerce.number().min(0).max(50).default(0),
   })
   // Sirsiz production — hamma uchun ochiq backend. Buni jim o'tkazib yubormaymiz.
   .refine((env) => env.NODE_ENV !== 'production' || env.INTERNAL_API_SECRET, {

@@ -9,6 +9,7 @@ import { InternalSecretGuard } from './common/guards/internal-secret.guard.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { validateEnv, type Env } from './config/env.js';
 import { HealthController } from './health.controller.js';
+import { PaymentsModule } from './payments/payments.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { TelegramAdsModule } from './telegram-ads/telegram-ads.module.js';
 
@@ -32,6 +33,7 @@ import { TelegramAdsModule } from './telegram-ads/telegram-ads.module.js';
     AuthModule,
     TelegramAdsModule,
     AdsModule,
+    PaymentsModule,
   ],
   controllers: [HealthController],
   // Tartib muhim: avval "so'rov BFF'danmi", keyin "foydalanuvchi kim".
