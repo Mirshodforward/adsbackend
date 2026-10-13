@@ -33,7 +33,18 @@ model User {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  sessions Session[]
+  /// Mijozga ko'rsatiladigan hisob raqami: 8 xonali, 0 bilan boshlanmaydi
+  /// (to'lov terminali, qo'llab-quvvatlash). Telegram ID o'rniga — u boshqa
+  /// loyihalarda ham login bo'lgani uchun to'lov tizimida to'qnashadi.
+  clientId   Int     @unique @default(dbgenerated("(floor(random() * 90000000) + 10000000)::int"))
+  /// Bo'sh balans (so'm): yangi e'lonlarga ajratish mumkin bo'lgan pul.
+  /// Faqat BalanceService orqali o'zgaradi (jurnal bilan bitta tranzaksiyada).
+  balanceUzs Decimal @default(0) @db.Decimal(14, 2)
+
+  sessions          Session[]
+  balanceEntries    BalanceEntry[]
+  clientAds         ClientAd[]
+  fundingOperations FundingOperation[]
 }
 
 /// Refresh token sessiyasi. Tokenning o'zi saqlanmaydi — faqat SHA-256 xeshi.
@@ -90,6 +101,7 @@ model Ad {
 
   stats           AdStat[]
   recommendations Recommendation[]
+  clientAd        ClientAd?
 }
 
 /// 5 daqiqalik statistika (getAdStats, interval=300). `fromTime` — oraliq boshi.
@@ -141,4 +153,100 @@ model Recommendation {
 
   @@index([status])
   @@index([adId, kind, status])
+}
+
+// ─── Balans va mijoz e'lonlari ───────────────────────────────────────────────
+
+enum BalanceEntryType {
+  TOPUP // to'lov orqali to'ldirish (+)
+  AD_FUNDING // e'lon budjetiga ajratildi (−)
+  AD_REFUND // e'londan ishlatilmagan qoldiq qaytdi (+)
+  ADJUSTMENT // admin tuzatishi (±)
+}
+
+/// Bo'sh balans harakatlari jurnali — faqat qo'shiladi, o'zgartirilmaydi.
+model BalanceEntry {
+  id              String           @id @default(cuid())
+  userId          String
+  type            BalanceEntryType
+  /// Bo'sh balansga ta'siri: + kirim, − chiqim.
+  amountUzs       Decimal          @db.Decimal(14, 2)
+  /// Shu yozuvdan keyingi bo'sh balans.
+  balanceAfterUzs Decimal          @db.Decimal(14, 2)
+  adId            Int?
+  operationId     String?
+  /// To'lov manbasi va uning tranzaksiya id'si: takroriy webhook ikki marta yozilmaydi.
+  source          String?
+  externalId      String?
+  note            String?
+  createdAt       DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([source, externalId])
+  @@index([userId, createdAt])
+}
+
+enum FundingKind {
+  CREATE_AD // yangi e'lon (initial_budget)
+  ADD_BUDGET // mavjud e'longa budjet qo'shish
+  CLOSE_AD // e'lonni yakunlash: qoldiqni balansga qaytarish
+}
+
+enum FundingStatus {
+  PENDING
+  DONE
+  FAILED
+}
+
+/// Pul Telegram Ads bilan almashinadigan amal. Avval balans o'zgaradi va shu
+/// yozuv yaratiladi, keyin Telegram chaqiriladi (idempotency_key = id). Javob
+/// kelmay qolsa, sinxronlash shu kalit bilan qayta urinadi — pul ikki marta o'tmaydi.
+model FundingOperation {
+  id        String        @id @default(cuid())
+  userId    String
+  kind      FundingKind
+  status    FundingStatus @default(PENDING)
+  adId      Int?
+  amountUzs Decimal       @db.Decimal(14, 2)
+  amountTon Decimal       @db.Decimal(18, 5)
+  /// Telegram'ga yuboriladigan parametrlar.
+  request   Json
+  error     String?
+  attempts  Int           @default(0)
+  /// CLOSE_AD: Telegram e'lon kamida 10 daqiqa nofaol bo'lishini talab qiladi.
+  notBefore DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([userId])
+}
+
+/// Mijoz e'loni: Telegram'dagi e'lon ↔ egasi va uning hisob-kitobi.
+/// O'rtacha kurs = fundedUzs / fundedTon (budjet turli kurslarda qo'shilishi mumkin).
+model ClientAd {
+  adId        Int       @id
+  userId      String
+  fundedUzs   Decimal   @default(0) @db.Decimal(14, 2)
+  fundedTon   Decimal   @default(0) @db.Decimal(18, 5)
+  /// Telegram'dagi spent_budget × o'rtacha kurs — har sinxronlashda qayta hisoblanadi.
+  spentUzs    Decimal   @default(0) @db.Decimal(14, 2)
+  refundedUzs Decimal   @default(0) @db.Decimal(14, 2)
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  ad   Ad   @relation(fields: [adId], references: [adId])
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+/// Platforma sozlamalari (kalit → JSON): TON kursi, komissiya, minimal budjet.
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }
