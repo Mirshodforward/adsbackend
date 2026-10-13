@@ -238,9 +238,15 @@ imzo = HMAC-SHA256(PAYLINKER_WEBHOOK_SECRET, `${timestamp}.${rawBody}`)
 
 Webhook kechikishi yoki yo'qolishi mumkin:
 
-- `GET /api/payments/topups/:id` — `PENDING` bo'lsa va 20 soniyadan eski bo'lsa, Paylinker'dan
-  `GET /v1/invoices/by-external/:id` bilan jonli holat so'raladi (frontend shu endpoint'ni so'raydi).
+- `GET /api/payments/topups/:id` — `PENDING` bo'lsa va 15 soniyadan eski bo'lsa, Paylinker'dan
+  `GET /v1/invoices/by-external/:id` bilan jonli holat so'raladi (frontend shu endpoint'ni har
+  4 soniyada va ilovadan qaytganda so'raydi).
 - Cron (har 10 daqiqa): muddati o'tgan `PENDING` to'ldirishlar Paylinker bilan solishtiriladi.
+  Navbat `updatedAt` bo'yicha aylanadi — hal bo'lmay qolgani boshqalarini to'smaydi.
+- `underReview` (Paylinker xavf tekshiruvi) — zaxira tekshiruv ham balansga YOZMAYDI, admin
+  Paylinker'da tasdiqlagach webhook keladi.
+- Kam to'langan (`amount < payUzs`) → `FAILED` + adminlarga bot xabari; `REFUNDED` → balans
+  avtomatik kamaytirilmaydi (pul e'longa sarflangan bo'lishi mumkin), adminlarga xabar.
 
 ---
 
