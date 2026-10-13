@@ -293,6 +293,7 @@ export class ClientAdsService {
   private view(ca: {
     adId: number;
     fundedUzs: Prisma.Decimal;
+    fundedTon: Prisma.Decimal;
     spentUzs: Prisma.Decimal;
     refundedUzs: Prisma.Decimal;
     closedAt: Date | null;
@@ -305,6 +306,12 @@ export class ClientAdsService {
       fundedUzs: ca.fundedUzs,
       spentUzs: ca.spentUzs,
       refundedUzs: ca.refundedUzs,
+      /** 1000 ko'rish narxi so'mda — e'lonning o'rtacha kursi bo'yicha. */
+      cpmUzs: ca.fundedTon.gt(0)
+        ? new Prisma.Decimal(String(ca.ad.cpm))
+            .mul(ca.fundedUzs.div(ca.fundedTon))
+            .toDecimalPlaces(0)
+        : null,
       /** E'londa qolgan (hali sarflanmagan) pul. */
       heldUzs: ca.fundedUzs.minus(ca.spentUzs).minus(ca.refundedUzs),
       closedAt: ca.closedAt,
