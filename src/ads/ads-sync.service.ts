@@ -8,13 +8,20 @@ import type {
   Account,
   Ad as TgAd,
 } from '../telegram-ads/telegram-ads.types.js';
+import { TelegramBotService } from '../telegram-bot/telegram-bot.service.js';
 import { toAdRow } from './ad-row.js';
+import { FundingService } from './client/funding.service.js';
 import { OptimizerService } from './optimizer.service.js';
 
 /** Birinchi sinxronlashda olinadigan tarix. API chegarasi: oraliq ≤ 1000 × 300 s ≈ 83 soat. */
 const BACKFILL_SEC = 72 * 3600;
 const STATS_RETENTION_MS = 30 * 24 * 3600_000;
 const STATS_INTERVAL = 300;
+
+interface StatusChange {
+  ad: TgAd;
+  chatId: bigint;
+}
 
 /**
  * Telegram Ads → baza: hisob, e'lonlar va 5 daqiqalik statistika. Har
@@ -33,6 +40,8 @@ export class AdsSyncService implements OnApplicationBootstrap {
     private readonly db: PrismaService,
     private readonly ads: TelegramAdsClient,
     private readonly optimizer: OptimizerService,
+    private readonly funding: FundingService,
+    private readonly bot: TelegramBotService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -64,6 +73,9 @@ export class AdsSyncService implements OnApplicationBootstrap {
       const account = await this.ads.getCurrentAccount();
       const ads = await this.fetchAllAds();
       await this.sync(ads);
+      // Javobi kelmay qolgan va vaqti kelgan (yakunlash) pul amallari, so'ng mijoz sarfi.
+      await this.funding.reconcile();
+      await this.funding.updateSpend();
       this.account = account;
       this.lastSyncAt = new Date();
       const created = await this.optimizer.evaluate(account);
@@ -86,11 +98,25 @@ export class AdsSyncService implements OnApplicationBootstrap {
 
   private async sync(ads: TgAd[]) {
     const now = Math.floor(Date.now() / 1000);
+    const changes: StatusChange[] = [];
     for (const ad of ads) {
       const prev = await this.db.ad.findUnique({
         where: { adId: ad.ad_id },
-        select: { spentBudget: true },
+        select: {
+          spentBudget: true,
+          status: true,
+          clientAd: {
+            select: { closedAt: true, user: { select: { telegramId: true } } },
+          },
+        },
       });
+      if (
+        prev?.clientAd &&
+        !prev.clientAd.closedAt &&
+        prev.status !== ad.status
+      ) {
+        changes.push({ ad, chatId: prev.clientAd.user.telegramId });
+      }
       const row = toAdRow(ad);
       await this.db.ad.upsert({
         where: { adId: ad.ad_id },
@@ -110,6 +136,22 @@ export class AdsSyncService implements OnApplicationBootstrap {
     await this.db.adStat.deleteMany({
       where: { fromTime: { lt: new Date(Date.now() - STATS_RETENTION_MS) } },
     });
+    for (const change of changes) await this.notifyOwner(change);
+  }
+
+  /** Mijozga: e'lon moderatsiyadan o'tdi, rad etildi yoki budjeti tugadi. */
+  private async notifyOwner({ ad, chatId }: StatusChange) {
+    const name = `«${(ad.text || ad.title).replace(/\s+/g, ' ').slice(0, 60)}»`;
+    const url = `${this.config.get('FRONTEND_URL', { infer: true })}/dashboard/ads/${ad.ad_id}`;
+    const text =
+      ad.status === 'active'
+        ? `✅ ${name} e'loningiz moderatsiyadan o'tdi va ko'rsatila boshladi.\n${url}`
+        : ad.status === 'declined'
+          ? `❌ ${name} e'loningiz moderatsiyadan o'tmadi: ${ad.decline_reason?.text ?? "sabab ko'rsatilmagan"}.\nE'lonni yakunlasangiz, pul balansingizga qaytadi: ${url}`
+          : ad.status === 'stopped' && ad.remaining_budget === 0
+            ? `ℹ️ ${name} e'loningiz budjeti tugadi. Davom ettirish uchun budjet qo'shing: ${url}`
+            : null;
+    if (text) await this.bot.sendMessage(chatId, text);
   }
 
   private async syncStats(adId: number, now: number) {

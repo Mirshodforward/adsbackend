@@ -36,7 +36,7 @@ model User {
   /// Mijozga ko'rsatiladigan hisob raqami: 8 xonali, 0 bilan boshlanmaydi
   /// (to'lov terminali, qo'llab-quvvatlash). Telegram ID o'rniga — u boshqa
   /// loyihalarda ham login bo'lgani uchun to'lov tizimida to'qnashadi.
-  clientId   Int     @unique @default(dbgenerated("(floor(random() * 90000000) + 10000000)::int"))
+  clientId   Int     @unique @default(dbgenerated("((floor((random() * (90000000)::double precision)) + (10000000)::double precision))::integer"))
   /// Bo'sh balans (so'm): yangi e'lonlarga ajratish mumkin bo'lgan pul.
   /// Faqat BalanceService orqali o'zgaradi (jurnal bilan bitta tranzaksiyada).
   balanceUzs Decimal @default(0) @db.Decimal(14, 2)

@@ -54,7 +54,9 @@ export class OptimizerService {
 
   /** Faol e'lonlarni qoidalardan o'tkazadi. Qaytaradi: yangi tavsiyalar soni. */
   async evaluate(account: Account): Promise<number> {
-    const rows = await this.db.ad.findMany();
+    // Mijoz e'lonlari chiqariladi: ularning budjeti mijoz balansidan, admin
+    // tavsiyasi bilan platforma TON'i sarflanmasin.
+    const rows = await this.db.ad.findMany({ where: { clientAd: null } });
     const states = await Promise.all(rows.map((row) => this.stateOf(row)));
     const ctx = accountContext(
       states,
@@ -262,7 +264,7 @@ export class OptimizerService {
       (r) =>
         `• #${r.adId} «${titles.get(r.adId)}» — ${KIND_LABEL[r.kind]}\n  ${r.reason}`,
     );
-    const url = `${this.config.get('FRONTEND_URL', { infer: true })}/dashboard/ads`;
+    const url = `${this.config.get('FRONTEND_URL', { infer: true })}/dashboard/admin`;
     const text = `OsonTarget: ${created.length} ta yangi tavsiya\n\n${lines.join('\n\n')}\n\nKo'rib chiqish: ${url}`;
 
     const admins = await this.db.user.findMany({

@@ -6,7 +6,7 @@ import type { JwtPayload } from '../common/auth-context.js';
 import type { ClientMeta } from '../common/client-meta.js';
 import { fail } from '../common/http.js';
 import type { Env } from '../config/env.js';
-import type { Role, User } from '../generated/prisma/client.js';
+import { Prisma, type Role, type User } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { verifyTelegramLogin } from './telegram-login.js';
 
@@ -25,6 +25,8 @@ export interface PublicUser {
   username: string | null;
   photoUrl: string | null;
   role: Role;
+  /** Mijoz raqami (to'lov, qo'llab-quvvatlash) — Telegram ID o'rniga ko'rsatiladi. */
+  clientId: number;
 }
 
 export interface AuthResult {
@@ -47,6 +49,7 @@ export function toPublicUser(u: User): PublicUser {
     username: u.username,
     photoUrl: u.photoUrl,
     role: u.role,
+    clientId: u.clientId,
   };
 }
 
@@ -90,11 +93,7 @@ export class AuthService {
       // Faqat ko'taradi: ro'yxatdan chiqarilgan admin rolini bazada qo'lda o'zgartiriladi.
       ...(isAdmin && { role: 'ADMIN' as const }),
     };
-    const user = await this.db.user.upsert({
-      where: { telegramId: tg.id },
-      create: { telegramId: tg.id, ...profile },
-      update: profile,
-    });
+    const user = await this.upsertUser(tg.id, profile);
     if (!user.isActive) fail('Hisobingiz bloklangan', 403);
 
     return this.issue(user, randomUUID(), meta);
@@ -143,6 +142,38 @@ export class AuthService {
     const user = await this.db.user.findUnique({ where: { id: userId } });
     if (!user) fail('Foydalanuvchi topilmadi', 404);
     return toPublicUser(user);
+  }
+
+  /**
+   * Yangi mijozga mijoz raqami (clientId) baza tomonidan tasodifiy beriladi;
+   * kamdan-kam band raqamga tushsa (unique buzilishi) — qayta urinamiz.
+   */
+  private async upsertUser(
+    telegramId: bigint,
+    profile: {
+      firstName: string;
+      lastName: string | null;
+      username: string | null;
+      photoUrl: string | null;
+      lastLoginAt: Date;
+      role?: Role;
+    },
+  ) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.db.user.upsert({
+          where: { telegramId },
+          create: { ...profile, telegramId },
+          update: profile,
+        });
+      } catch (e) {
+        const clientIdTaken =
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === 'P2002' &&
+          JSON.stringify(e.meta ?? {}).includes('clientId');
+        if (!clientIdTaken || attempt >= 5) throw e;
+      }
+    }
   }
 
   private revokeFamily(familyId: string) {
