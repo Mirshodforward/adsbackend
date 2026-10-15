@@ -77,6 +77,45 @@ export class BalanceService {
   }
 
   /**
+   * Admin tuzatishi (±): bonus, qaytarilgan to'lovni yechish, xato tuzatish.
+   * Manfiy summa bo'sh balansdan ko'p bo'lsa — `ok: false`, hech narsa yozilmaydi.
+   */
+  async adjust(
+    userId: string,
+    amountUzs: Amount,
+    note: string,
+  ): Promise<{ ok: boolean; balanceUzs: Prisma.Decimal }> {
+    const amount = new Prisma.Decimal(amountUzs);
+    if (amount.isZero() || amount.decimalPlaces() > 2) {
+      throw new Error(`Noto'g'ri summa: ${amountUzs}`);
+    }
+    return this.db.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: {
+          id: userId,
+          ...(amount.lt(0) && { balanceUzs: { gte: amount.negated() } }),
+        },
+        data: { balanceUzs: { increment: amount } },
+      });
+      const { balanceUzs } = await tx.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { balanceUzs: true },
+      });
+      if (updated.count === 0) return { ok: false, balanceUzs };
+      await tx.balanceEntry.create({
+        data: {
+          userId,
+          type: 'ADJUSTMENT',
+          amountUzs: amount,
+          balanceAfterUzs: balanceUzs,
+          note,
+        },
+      });
+      return { ok: true, balanceUzs };
+    });
+  }
+
+  /**
    * E'lon budjeti uchun yechish (tashqi tranzaksiya ichida). Pul yetmasa —
    * `false`: shartli UPDATE, parallel so'rovlar bitta pulni ikki marta sarflay olmaydi.
    */

@@ -62,10 +62,15 @@ const createSchema = z.object({
   budgetUzs: z.number().int().positive().max(1_000_000_000),
   cpmUzs: z.number().positive().max(10_000_000),
   dailyLimitUzs: z.number().int().positive().optional(),
+  impressionFrequency: z.number().int().min(1).max(4).optional(),
 });
 
 const budgetSchema = z.object({
   amountUzs: z.number().int().positive().max(1_000_000_000),
+});
+
+const cpmSchema = z.object({
+  cpmUzs: z.number().positive().max(10_000_000),
 });
 
 /** Mijozning o'z e'lonlari — har bir amal faqat egasiga. */
@@ -123,6 +128,17 @@ export class ClientAdsController {
     @Body(zodBody(budgetSchema)) body: z.infer<typeof budgetSchema>,
   ) {
     return this.ads.addBudget(ctx.userId, adId, body.amountUzs);
+  }
+
+  /** 1000 ko'rish narxini o'zgartirish — Telegram Ads'dagi kabi istalgan vaqtda. */
+  @Post(':adId/cpm')
+  @HttpCode(200)
+  cpm(
+    @Auth() ctx: AuthContext,
+    @Param('adId', ParseIntPipe) adId: number,
+    @Body(zodBody(cpmSchema)) body: z.infer<typeof cpmSchema>,
+  ) {
+    return this.ads.setCpm(ctx.userId, adId, body.cpmUzs);
   }
 
   @Post(':adId/close')

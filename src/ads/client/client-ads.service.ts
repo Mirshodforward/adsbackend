@@ -254,11 +254,66 @@ export class ClientAdsService {
     return this.detail(userId, adId);
   }
 
+  /**
+   * 1000 ko'rish narxini o'zgartirish. So'm → TON e'lonning o'z kursi bo'yicha
+   * (budjet shu kursda sotib olingan) — mijoz ko'rgan so'm narxi bilan mos keladi.
+   */
+  async setCpm(userId: string, adId: number, cpmUzs: number) {
+    const ca = await this.ownOpen(userId, adId);
+    if (ca.ad.status === 'declined') {
+      fail("Rad etilgan e'lonni o'zgartirib bo'lmaydi — yangisini yarating");
+    }
+    const pricing = await this.pricing.getPricing();
+    const rate = ca.fundedTon.gt(0)
+      ? ca.fundedUzs.div(ca.fundedTon).toNumber()
+      : pricing.uzsPerTon;
+    if (!(rate > 0)) {
+      fail(
+        "Valyuta kursi hozircha yangilanmagan — birozdan so'ng urinib ko'ring",
+      );
+    }
+    const cpm = Math.round((cpmUzs / rate) * 100) / 100;
+    if (cpm < pricing.minCpmTon) {
+      fail(
+        `1000 ko'rish narxi kamida ${formatUzs(pricing.minCpmTon * rate)} so'm bo'lishi kerak`,
+      );
+    }
+    try {
+      const ad = await this.ads.editAd({ ad_id: adId, cpm });
+      await this.db.ad.update({ where: { adId }, data: toAdRow(ad) });
+    } catch (e) {
+      if (e instanceof TelegramAdsError)
+        fail(`Telegram xatosi: ${e.code}`, 502);
+      throw e;
+    }
+    return this.detail(userId, adId);
+  }
+
   /** E'lonni to'xtatadi; ishlatilmagan qoldiq ~10 daqiqadan keyin balansga qaytadi. */
   async close(userId: string, adId: number) {
     const ca = await this.ownOpen(userId, adId);
+    await this.finish(ca);
+    return this.detail(userId, adId);
+  }
+
+  /** Admin: istalgan mijoz e'lonini yakunlash (qoldiq egasiga qaytadi). */
+  async closeAsAdmin(adId: number) {
+    const ca = await this.db.clientAd.findUnique({
+      where: { adId },
+      include: { ad: { select: { status: true, isPaused: true } } },
+    });
+    if (!ca) fail("Bu e'lon mijozniki emas — platformaning o'z e'loni", 404);
+    if (ca.closedAt) fail("E'lon allaqachon yakunlangan", 409);
+    await this.finish(ca);
+  }
+
+  private async finish(ca: {
+    adId: number;
+    userId: string;
+    ad: { status: string; isPaused: boolean };
+  }) {
     const pending = await this.db.fundingOperation.count({
-      where: { adId, status: 'PENDING' },
+      where: { adId: ca.adId, status: 'PENDING' },
     });
     if (pending)
       fail(
@@ -268,16 +323,15 @@ export class ClientAdsService {
 
     if (!ca.ad.isPaused && ca.ad.status !== 'declined') {
       try {
-        const ad = await this.ads.editAd({ ad_id: adId, is_paused: true });
-        await this.db.ad.update({ where: { adId }, data: toAdRow(ad) });
+        const ad = await this.ads.editAd({ ad_id: ca.adId, is_paused: true });
+        await this.db.ad.update({ where: { adId: ca.adId }, data: toAdRow(ad) });
       } catch (e) {
         if (e instanceof TelegramAdsError)
           fail(`Telegram xatosi: ${e.code}`, 502);
         throw e;
       }
     }
-    await this.funding.scheduleClose(userId, adId);
-    return this.detail(userId, adId);
+    await this.funding.scheduleClose(ca.userId, ca.adId);
   }
 
   private async ownOpen(userId: string, adId: number) {

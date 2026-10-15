@@ -11,8 +11,14 @@ const pricing: Pricing = {
   minBudgetUzs: 30_000,
   minCpmTon: 0.1,
   manualUzsPerTon: null,
-  uzsPerTon: 20_000, // 1 TON = 20 000 so'm (komissiya bilan)
+  topupMinUzs: 50_000,
+  topupMaxUzs: 10_000_000,
+  topupFeePercent: 0,
+  uzsPerTon: 20_000, // 1 TON = 20 000 so'm (xizmat haqi bilan)
   marketUzsPerTon: 18_181.82,
+  tonUsd: 1.5,
+  usdUzs: 12_121.21,
+  minCpmUzs: 2_000,
   rateUpdatedAt: '2026-10-13T00:00:00Z',
   stale: false,
 };
@@ -174,6 +180,13 @@ describe('buildAdRequest', () => {
     });
     const tg = buildAdRequest({ ...input, button: 'buy' }, pricing, 1);
     expect(tg.ok && tg.request.button).toBeUndefined();
+  });
+
+  it("bir foydalanuvchiga kunlik ko'rsatish chastotasi faqat 1 dan katta bo'lsa yuboriladi", () => {
+    const def = buildAdRequest({ ...input, impressionFrequency: 1 }, pricing, 1);
+    expect(def.ok && def.request.impression_frequency).toBeUndefined();
+    const twice = buildAdRequest({ ...input, impressionFrequency: 2 }, pricing, 1);
+    expect(twice.ok && twice.request.impression_frequency).toBe(2);
   });
 
   it("kunlik limit TON'ga aylanadi va 1000 ko'rishdan kam bo'lmaydi", () => {

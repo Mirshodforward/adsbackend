@@ -30,6 +30,8 @@ export interface ClientAdInput {
   budgetUzs: number;
   cpmUzs: number;
   dailyLimitUzs?: number;
+  /** Bir foydalanuvchiga kuniga necha marta ko'rsatiladi (1–4, standart 1). */
+  impressionFrequency?: number;
 }
 
 export type AdRequestResult =
@@ -205,6 +207,10 @@ export function buildAdRequest(
       target,
       initial_budget: amountTon,
       ...(daily !== undefined && { daily_budget_limit: daily }),
+      ...(input.impressionFrequency !== undefined &&
+        input.impressionFrequency > 1 && {
+          impression_frequency: input.impressionFrequency,
+        }),
       ...(!link.telegram && { website_name: input.websiteName }),
       ...(!link.telegram && input.button && { button: input.button }),
       return_target: true,
