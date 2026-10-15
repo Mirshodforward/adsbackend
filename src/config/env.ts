@@ -45,8 +45,6 @@ const envSchema = z
     // E'lonlar va statistikani har 5 daqiqada sinxronlash. Faqat serverda
     // yoqiladi: lokal ishlash va testlar haqiqiy API'ni bezovta qilmasin.
     ADS_SYNC_ENABLED: z.stringbool().default(false),
-    // RAISE_CPM tavsiyasi bundan oshirmaydi (hisob valyutasida).
-    ADS_MAX_CPM: z.coerce.number().positive().default(0.5),
     // Shu Telegram ID'lar login paytida ADMIN bo'ladi (vergul bilan).
     ADMIN_TELEGRAM_IDS: z
       .string()
@@ -79,6 +77,7 @@ const envSchema = z
       .optional()
       .transform((v) => v || undefined),
     // Yoqilgan usullar (vergul bilan): CLICK, PAYME, UZUM, PAYNET.
+    // Summa chegaralari va komissiya — admin panelidagi sozlamalarda (bazada).
     PAYMENT_METHODS: z
       .string()
       .default('CLICK,PAYME,UZUM,PAYNET')
@@ -88,10 +87,6 @@ const envSchema = z
           .map((m) => m.trim().toUpperCase())
           .filter(Boolean),
       ),
-    TOPUP_MIN_UZS: z.coerce.number().int().positive().default(10_000),
-    TOPUP_MAX_UZS: z.coerce.number().int().positive().default(2_500_000),
-    // Mijoz to'lovga qo'shimcha to'laydigan komissiya (%). 0 — komissiyani biz ko'taramiz.
-    TOPUP_FEE_PERCENT: z.coerce.number().min(0).max(50).default(0),
   })
   // Sirsiz production — hamma uchun ochiq backend. Buni jim o'tkazib yubormaymiz.
   .refine((env) => env.NODE_ENV !== 'production' || env.INTERNAL_API_SECRET, {

@@ -100,9 +100,8 @@ model Ad {
   createdDate      DateTime
   syncedAt         DateTime @updatedAt
 
-  stats           AdStat[]
-  recommendations Recommendation[]
-  clientAd        ClientAd?
+  stats    AdStat[]
+  clientAd ClientAd?
 }
 
 /// 5 daqiqalik statistika (getAdStats, interval=300). `fromTime` — oraliq boshi.
@@ -117,43 +116,6 @@ model AdStat {
   ad Ad @relation(fields: [adId], references: [adId], onDelete: Cascade)
 
   @@id([adId, fromTime])
-}
-
-enum RecommendationKind {
-  ADD_BUDGET // budjet tez orada tugaydi
-  PAUSE // samarasiz e'lon
-  RAISE_CPM // auksionda yutqazmoqda — kam ko'rsatilmoqda
-}
-
-enum RecommendationStatus {
-  PENDING
-  APPLIED
-  DISMISSED
-  EXPIRED // sharoit o'zgardi yoki e'lon boshqa joyda o'zgartirildi
-  FAILED
-}
-
-/// Optimizator tavsiyasi. Qo'llanganlari — pulni o'zgartirgan amallar jurnali ham.
-model Recommendation {
-  id          String               @id @default(cuid())
-  adId        Int
-  kind        RecommendationKind
-  status      RecommendationStatus @default(PENDING)
-  /// Admin o'qiydigan izoh, raqamlar bilan.
-  reason      String
-  /// Bajariladigan o'zgarish: {"amount": 0.96} yoki {"cpm": 0.25}.
-  change      Json
-  /// Tavsiya paytidagi qiymatlar — qo'llashdan oldin hozirgi holat bilan solishtiriladi.
-  snapshot    Json
-  error       String?
-  createdAt   DateTime             @default(now())
-  decidedAt   DateTime?
-  decidedById String?
-
-  ad Ad @relation(fields: [adId], references: [adId], onDelete: Cascade)
-
-  @@index([status])
-  @@index([adId, kind, status])
 }
 
 // ─── Balans va mijoz e'lonlari ───────────────────────────────────────────────
@@ -245,7 +207,8 @@ model ClientAd {
   @@index([userId])
 }
 
-/// Platforma sozlamalari (kalit → JSON): TON kursi, komissiya, minimal budjet.
+/// Platforma sozlamalari (kalit → JSON): TON kursi, xizmat haqi, minimal budjet,
+/// to'ldirish chegaralari (src/settings/pricing.service.ts).
 model Setting {
   key       String   @id
   value     Json

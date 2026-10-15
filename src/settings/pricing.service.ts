@@ -10,14 +10,27 @@ const RATE_KEY = 'ton_rate';
 /** Bundan eski bozor kursi bilan pul amallari bajarilmaydi (qo'lda kurs bo'lmasa). */
 const RATE_MAX_AGE_MS = 24 * 3600_000;
 
+/**
+ * Platforma sozlamalari — admin panelida o'zgartiriladi, bazada bitta JSON.
+ * Mijoz hamma narsani so'mda ko'radi; TON faqat Telegram bilan hisob-kitobda.
+ */
 export const pricingSchema = z.object({
-  /** Mijoz narxi bozor kursidan shuncha foiz yuqori. */
-  commissionPercent: z.number().min(0).max(100).default(10),
-  minBudgetUzs: z.number().int().positive().default(30_000),
-  /** Telegram minimal CPM'ini aniq e'lon qilmaydi — xavfsiz pastki chegara. */
+  /**
+   * Xizmat haqi: mijoz narxi bozor kursidan shuncha foiz yuqori. Mijoz e'longa
+   * 150 000 so'm ajratsa, Telegram'ga 100 000 so'mlik TON ketadi — farq bizniki.
+   */
+  commissionPercent: z.number().min(0).max(300).default(50),
+  /** Bitta e'longa ajratiladigan eng kam budjet (so'm). */
+  minBudgetUzs: z.number().int().positive().default(50_000),
+  /** Telegram minimal CPM'ini aniq e'lon qilmaydi — xavfsiz pastki chegara (TON). */
   minCpmTon: z.number().positive().default(0.1),
-  /** Bo'lsa — bozor kursi o'rniga ishlatiladi (1 TON necha so'm, komissiyasiz). */
+  /** Bo'lsa — bozor kursi o'rniga ishlatiladi (1 TON necha so'm, xizmat haqisiz). */
   manualUzsPerTon: z.number().positive().nullable().default(null),
+  /** Balansni to'ldirish: bir martalik summa chegaralari (so'm). */
+  topupMinUzs: z.number().int().positive().default(50_000),
+  topupMaxUzs: z.number().int().positive().default(10_000_000),
+  /** Mijoz to'lovga qo'shimcha to'laydigan komissiya (%). 0 — komissiyani biz ko'taramiz. */
+  topupFeePercent: z.number().min(0).max(50).default(0),
 });
 export type PricingSettings = z.infer<typeof pricingSchema>;
 
@@ -30,9 +43,15 @@ const rateSchema = z.object({
 type MarketRate = z.infer<typeof rateSchema>;
 
 export interface Pricing extends PricingSettings {
-  /** Mijoz narxi: 1 TON necha so'm (komissiya bilan). 0 — kurs yo'q. */
+  /** Mijoz narxi: 1 TON necha so'm (xizmat haqi bilan). 0 — kurs yo'q. */
   uzsPerTon: number;
+  /** Bozor kursi (Binance × Markaziy bank) — xizmat haqisiz. */
   marketUzsPerTon: number | null;
+  /** Bozor kursining tarkibi — admin ko'radi. */
+  tonUsd: number | null;
+  usdUzs: number | null;
+  /** Mijoz uchun 1000 ko'rishning eng kam narxi (so'm). */
+  minCpmUzs: number;
   rateUpdatedAt: string | null;
   /** Kurs eskirgan yoki yo'q — yangi pul amallari bajarilmaydi. */
   stale: boolean;
@@ -40,8 +59,8 @@ export interface Pricing extends PricingSettings {
 
 /**
  * Narx: so'm ↔ TON. Bozor kursi har soatda olinadi: TON/USD — Binance,
- * USD/UZS — O'zbekiston Markaziy banki. Admin komissiya va ixtiyoriy qo'lda
- * kurs belgilaydi.
+ * USD/UZS — O'zbekiston Markaziy banki. Admin xizmat haqini va ixtiyoriy
+ * qo'lda kursni belgilaydi.
  */
 @Injectable()
 export class PricingService implements OnApplicationBootstrap {
@@ -60,14 +79,21 @@ export class PricingService implements OnApplicationBootstrap {
   async scheduledRefresh() {
     // Fon ishlari faqat serverda — testlar va lokal ishlash tashqi API'ga chiqmasin.
     if (!this.config.get('ADS_SYNC_ENABLED', { infer: true })) return;
+    await this.refreshRate();
+  }
+
+  /** Bozor kursini hozir yangilash (admin tugmasi ham shuni chaqiradi). */
+  async refreshRate(): Promise<MarketRate | null> {
     try {
       const rate = await this.fetchMarketRate();
       await this.save(RATE_KEY, rate);
       this.logger.log(`Kurs: 1 TON = ${rate.uzsPerTon} so'm`);
+      return rate;
     } catch (e) {
       this.logger.warn(
         `Kursni olib bo'lmadi: ${e instanceof Error ? e.message : e}`,
       );
+      return null;
     }
   }
 
@@ -81,12 +107,16 @@ export class PricingService implements OnApplicationBootstrap {
     const fresh =
       settings.manualUzsPerTon !== null ||
       (!!rate && Date.now() - Date.parse(rate.fetchedAt) < RATE_MAX_AGE_MS);
+    const uzsPerTon = base
+      ? Math.round(base * (1 + settings.commissionPercent / 100) * 100) / 100
+      : 0;
     return {
       ...settings,
-      uzsPerTon: base
-        ? Math.round(base * (1 + settings.commissionPercent / 100) * 100) / 100
-        : 0,
+      uzsPerTon,
       marketUzsPerTon: market,
+      tonUsd: rate?.tonUsd ?? null,
+      usdUzs: rate?.usdUzs ?? null,
+      minCpmUzs: Math.ceil(settings.minCpmTon * uzsPerTon),
       rateUpdatedAt: rate?.fetchedAt ?? null,
       stale: !base || !fresh,
     };

@@ -10,6 +10,7 @@ import {
   type TopupMethod,
 } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PricingService } from '../settings/pricing.service.js';
 import { TelegramBotService } from '../telegram-bot/telegram-bot.service.js';
 import { GATEWAY_METHODS, payAmount, type GatewayMethod } from './methods.js';
 import {
@@ -86,6 +87,7 @@ export class TopupsService {
     private readonly balance: BalanceService,
     private readonly paylinker: PaylinkerClient,
     private readonly bot: TelegramBotService,
+    private readonly pricing: PricingService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -101,11 +103,13 @@ export class TopupsService {
     );
   }
 
-  limits() {
+  /** Summa chegaralari va komissiya — admin paneli sozlamalaridan. */
+  async limits() {
+    const s = await this.pricing.settings();
     return {
-      minUzs: this.config.get('TOPUP_MIN_UZS', { infer: true }),
-      maxUzs: this.config.get('TOPUP_MAX_UZS', { infer: true }),
-      feePercent: this.config.get('TOPUP_FEE_PERCENT', { infer: true }),
+      minUzs: s.topupMinUzs,
+      maxUzs: s.topupMaxUzs,
+      feePercent: s.topupFeePercent,
     };
   }
 
@@ -117,7 +121,7 @@ export class TopupsService {
     const method = this.methods().find((m) => m.code === code);
     if (!method) fail("Bu to'lov usuli hozir ishlamayapti", 400);
 
-    const { minUzs, maxUzs, feePercent } = this.limits();
+    const { minUzs, maxUzs, feePercent } = await this.limits();
     if (
       !Number.isInteger(amountUzs) ||
       amountUzs < minUzs ||

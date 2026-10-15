@@ -9,6 +9,7 @@ import {
   type PaylinkerInvoice,
 } from '../src/payments/paylinker/paylinker.client.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { PricingService } from '../src/settings/pricing.service.js';
 import { TelegramBotService } from '../src/telegram-bot/telegram-bot.service.js';
 import { INTERNAL_SECRET, widgetPayload } from './helpers.js';
 
@@ -19,11 +20,11 @@ const WEBHOOK_SECRET = vi.hoisted(() => {
   process.env.PAYLINKER_WEBHOOK_SECRET = secret;
   process.env.PAYNET_APP_MERCHANT = '54304';
   process.env.PAYMENT_METHODS = 'CLICK,PAYME,UZUM,PAYNET';
-  process.env.TOPUP_MIN_UZS = '10000';
-  process.env.TOPUP_MAX_UZS = '2500000';
-  process.env.TOPUP_FEE_PERCENT = '0';
   return secret;
 });
+
+/** Summa chegaralari — admin sozlamalarida; test o'ziga qulayini qo'yadi va qaytaradi. */
+const TEST_LIMITS = { topupMinUzs: 10_000, topupMaxUzs: 2_500_000, topupFeePercent: 0 };
 
 const OWNER_TG = 9_920_000_000 + randomInt(1_000_000);
 const OTHER_TG = OWNER_TG + 1;
@@ -69,6 +70,9 @@ describe('Payments (e2e)', () => {
   let ownerToken: string;
   let otherToken: string;
   let ownerId: string;
+  let pricing: PricingService;
+  let savedSettings: Awaited<ReturnType<PricingService['settings']>>;
+  let hadPricing = false;
 
   const http = () => request(app.getHttpServer());
   const api = (token: string) => ({
@@ -153,6 +157,10 @@ describe('Payments (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
     db = app.get(PrismaService);
+    pricing = app.get(PricingService);
+    hadPricing = !!(await db.setting.findUnique({ where: { key: 'pricing' } }));
+    savedSettings = await pricing.settings();
+    await pricing.updateSettings(TEST_LIMITS);
 
     ownerToken = await login(OWNER_TG);
     otherToken = await login(OTHER_TG);
@@ -164,6 +172,8 @@ describe('Payments (e2e)', () => {
   });
 
   afterAll(async () => {
+    if (hadPricing) await pricing.updateSettings(savedSettings);
+    else await db.setting.deleteMany({ where: { key: 'pricing' } });
     const users = await db.user.findMany({
       where: { telegramId: { in: [BigInt(OWNER_TG), BigInt(OTHER_TG)] } },
       select: { id: true },

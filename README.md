@@ -10,7 +10,7 @@ Brauzer ──► Vercel (Next.js BFF, httpOnly cookie) ──► nginx (HTTPS) 
 ```
 
 Backend internetga ochiq, lekin `x-internal-secret`siz so'rovni 403 bilan qaytaradi
-(`/api/health` bundan mustasno). Uni faqat frontend BFF chaqiradi.
+(`/api/health` va to'lov webhook'i bundan mustasno). Uni faqat frontend BFF chaqiradi.
 
 ## Lokal ishga tushirish
 
@@ -76,38 +76,65 @@ nginx -t && systemctl reload nginx
 certbot --nginx -d api.osontarget.uz
 ```
 
-## Optimizatsiya
+## Pul modeli: mijoz so'mda, Telegram TON'da
+
+Mijoz hamma narsani so'mda ko'radi: balans, e'lon budjeti, 1000 ko'rish narxi (CPM), sarf.
+Telegram Ads bilan hisob-kitob TON'da. O'rtadagi kurs (`src/settings/pricing.service.ts`):
+
+```
+mijoz narxi (1 TON) = bozor kursi × (1 + xizmat haqi %)
+bozor kursi         = TON/USD (Binance) × USD/UZS (Markaziy bank), har soatda yangilanadi
+```
+
+Standart xizmat haqi — **50%**: mijoz e'longa 150 000 so'm ajratsa, Telegram'ga 100 000 so'mlik
+TON ketadi, farq platformaniki. Sarf har sinxronlashda e'lonning *o'z* kursi bo'yicha so'mga
+aylanadi (`ClientAd.fundedUzs / fundedTon`) — kurs keyin o'zgarsa ham mijozga ta'sir qilmaydi.
+E'lon yakunlansa, ishlatilmagan qoldiq shu kurs bo'yicha balansga qaytadi.
+
+Admin panelida o'zgartiriladi: xizmat haqi, qo'lda kurs, minimal budjet, minimal CPM (TON — Telegram
+chegarasi), to'ldirish chegaralari (standart 50 000 – 10 000 000 so'm) va to'lov komissiyasi.
+Hammasi bazada (`Setting.pricing`), `.env`da emas.
+
+## Sinxronlash
 
 `ADS_SYNC_ENABLED=true` bo'lsa, backend har 5 daqiqada Telegram Ads'dan hisob holatini, e'lonlarni va
 5 daqiqalik statistikani bazaga oladi (`src/ads/ads-sync.service.ts`). Birinchi sinxronlashda oxirgi
-72 soat yuklanadi, statistika 30 kun saqlanadi. Har sinxronlashdan keyin qoidalar
-(`src/ads/optimizer/rules.ts`) faol e'lonlarni baholaydi:
+72 soat yuklanadi, statistika 30 kun saqlanadi. Har sinxronlashdan keyin:
 
-| Tavsiya     | Qachon                                                                       | Amal                       |
-| ----------- | ---------------------------------------------------------------------------- | -------------------------- |
-| To'xtatish  | ≥0.5 sarfdan keyin harakat narxi (CPA) hisob medianasidan 2× qimmat yoki 100+ bosishda 0 harakat | `editAd is_paused`         |
-| Budjet      | budjet 12 soatdan kamga yetadi (oxirgi 24 soat sarfi bo'yicha)                | `increaseAdBudget` (3 kunlik sarf) |
-| CPM         | oxirgi 6 soatdagi ko'rishlar kechagi shu vaqtdagidan 80% kam                  | `editAd cpm` +10%, `ADS_MAX_CPM`gacha |
+- javobi kelmay qolgan pul amallari (`FundingOperation`) xuddi shu `idempotency_key` bilan qayta
+  yuboriladi; yakunlangan e'lonlarning qoldig'i 10+ daqiqadan keyin balansga qaytariladi;
+- mijoz sarfi so'mda yangilanadi;
+- e'lon holati o'zgargan mijozga bot orqali xabar boradi (moderatsiyadan o'tdi / rad etildi / budjet tugadi).
 
-Hozir **tavsiya rejimi**: tavsiya admin sahifasida (`/dashboard/ads`) chiqadi, adminlarga bot orqali
-xabar boradi, pul o'zgartiruvchi amalni faqat admin "Qo'llash" bilan tasdiqlaydi. Qo'llashdan oldin
-e'lonning hozirgi holati Telegram'dan qayta olinadi — tavsiyadan keyin o'zgargan bo'lsa, amal bajarilmaydi.
-Budjet `idempotency_key` bilan o'tkaziladi. Rad etilgan tavsiya 24 soat qayta taklif qilinmaydi.
+## Admin paneli
 
-Admin — `ADMIN_TELEGRAM_IDS`dagi foydalanuvchi (login paytida rol beriladi).
+Admin — `ADMIN_TELEGRAM_IDS`dagi foydalanuvchi (login paytida rol beriladi); keyin rolni admin
+panelida ham berish mumkin. `src/admin`, barcha endpoint'lar `@AdminOnly()`:
+
+| Endpoint | Nima |
+| --- | --- |
+| `GET /admin/overview` | Platforma holati: TON hisobi (so'mda ham), mijozlar, balanslar yig'indisi, sarf, to'ldirishlar, e'tibor talab qiladigan amallar |
+| `GET /admin/users?q=&page=` · `GET /admin/users/:id` | Mijozlar (qidiruv: ism, username, mijoz raqami, Telegram ID), mijoz kartasi: balans, e'lonlar, jurnal, to'ldirishlar |
+| `POST /admin/users/:id/adjust` | Balansni qo'lda tuzatish (±), mijozga bot xabari |
+| `POST /admin/users/:id/active` · `/role` | Bloklash (sessiyalar yopiladi) · rol |
+| `GET /admin/ads` · `POST /admin/ads/sync` · `/:adId/pause` · `/resume` · `/close` | Hisobdagi barcha e'lonlar (egasi va so'mdagi pul bilan), sinxronlash, boshqaruv |
+| `GET /admin/topups` · `POST /admin/topups/:id/refresh` | To'ldirishlar; webhook kelmaganini Paylinker'dan qayta so'rash |
+| `GET /admin/funding` | Kutilayotgan / yiqilgan pul amallari |
+| `GET/PUT /admin/settings` · `POST /admin/settings/refresh-rate` | Narx sozlamalari; bozor kursini hozir yangilash |
 
 ## Buyruqlar
 
 | Buyruq              | Nima qiladi                                                                  |
 | ------------------- | ---------------------------------------------------------------------------- |
-| `npm test`          | Unit testlar (Telegram imzo tekshiruvi, Ads API klienti)                     |
-| `npm run test:e2e`  | Auth oqimi va ichki sir. `.env`dagi bazada ishlaydi, test foydalanuvchini o'zi o'chiradi |
+| `npm test`          | Unit testlar (Telegram imzo tekshiruvi, Ads API klienti, e'lon so'rovi)      |
+| `npm run test:e2e`  | Auth, mijoz e'lonlari, to'lovlar, admin paneli. `.env`dagi bazada ishlaydi, test ma'lumotini o'zi o'chiradi |
 | `npm run ads:check` | Ads API kaliti ishlayaptimi va hisobda nima borligini ko'rsatadi (faqat o'qiydi) |
 | `npm run db:studio` | Prisma Studio                                                                |
 
 ## Autentifikatsiya
 
-1. Frontend Telegram Login Widget ma'lumotini `POST /api/auth/telegram` ga uzatadi.
+1. Frontend Telegram Login Widget ma'lumotini `POST /api/auth/telegram` ga uzatadi (widget
+   redirect rejimida — BFF GET callback'i orqali).
 2. Backend imzoni bot tokeni bilan tekshiradi (HMAC-SHA256), foydalanuvchini yaratadi yoki yangilaydi
    va ikki token beradi: access (15 daqiqa) va refresh (30 kun). Refresh token bazada faqat xesh
    ko'rinishida saqlanadi.

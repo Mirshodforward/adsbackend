@@ -5,6 +5,8 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.e2e-spec.ts'],
+    // Hamma fayl bitta bazada ishlaydi (sozlamalar, foydalanuvchilar) — ketma-ket.
+    fileParallelism: false,
     env: {
       // Testlar o'z imzosini yaratadi — haqiqiy bot tokeni kerak emas.
       TELEGRAM_BOT_TOKEN: '123456789:AAE2E_TEST_TOKEN_xxxxxxxxxxxxxxxxxxxxx',

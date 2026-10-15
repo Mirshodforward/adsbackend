@@ -17,8 +17,8 @@ export class TopupsController {
 
   /** To'ldirish sahifasi: yoqilgan usullar va summa chegaralari. */
   @Get('methods')
-  methods() {
-    return { methods: this.topups.methods(), ...this.topups.limits() };
+  async methods() {
+    return { methods: this.topups.methods(), ...(await this.topups.limits()) };
   }
 
   @Post('topups')

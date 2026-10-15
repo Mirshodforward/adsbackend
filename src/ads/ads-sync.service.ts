@@ -11,7 +11,6 @@ import type {
 import { TelegramBotService } from '../telegram-bot/telegram-bot.service.js';
 import { toAdRow } from './ad-row.js';
 import { FundingService } from './client/funding.service.js';
-import { OptimizerService } from './optimizer.service.js';
 
 /** Birinchi sinxronlashda olinadigan tarix. API chegarasi: oraliq ≤ 1000 × 300 s ≈ 83 soat. */
 const BACKFILL_SEC = 72 * 3600;
@@ -25,7 +24,8 @@ interface StatusChange {
 
 /**
  * Telegram Ads → baza: hisob, e'lonlar va 5 daqiqalik statistika. Har
- * sinxronlashdan keyin tavsiyalar qayta hisoblanadi.
+ * sinxronlashdan keyin javobi kelmay qolgan pul amallari qayta uriniladi va
+ * mijoz sarfi so'mda yangilanadi.
  */
 @Injectable()
 export class AdsSyncService implements OnApplicationBootstrap {
@@ -39,7 +39,6 @@ export class AdsSyncService implements OnApplicationBootstrap {
   constructor(
     private readonly db: PrismaService,
     private readonly ads: TelegramAdsClient,
-    private readonly optimizer: OptimizerService,
     private readonly funding: FundingService,
     private readonly bot: TelegramBotService,
     private readonly config: ConfigService<Env, true>,
@@ -54,10 +53,7 @@ export class AdsSyncService implements OnApplicationBootstrap {
   async scheduled() {
     if (!this.config.get('ADS_SYNC_ENABLED', { infer: true })) return;
     try {
-      const result = await this.run();
-      if (result?.created) {
-        this.logger.log(`Yangi tavsiyalar: ${result.created}`);
-      }
+      await this.run();
     } catch (e) {
       this.logger.error(
         `Sinxronlash yiqildi: ${e instanceof Error ? e.message : e}`,
@@ -66,7 +62,7 @@ export class AdsSyncService implements OnApplicationBootstrap {
   }
 
   /** `null` — oldingi sinxronlash hali tugamagan. */
-  async run(): Promise<{ ads: number; created: number } | null> {
+  async run(): Promise<{ ads: number } | null> {
     if (this.running) return null;
     this.running = true;
     try {
@@ -78,8 +74,7 @@ export class AdsSyncService implements OnApplicationBootstrap {
       await this.funding.updateSpend();
       this.account = account;
       this.lastSyncAt = new Date();
-      const created = await this.optimizer.evaluate(account);
-      return { ads: ads.length, created };
+      return { ads: ads.length };
     } finally {
       this.running = false;
     }

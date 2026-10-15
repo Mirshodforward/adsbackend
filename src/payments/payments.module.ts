@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BalanceModule } from '../balance/balance.module.js';
 import type { Env } from '../config/env.js';
+import { SettingsModule } from '../settings/settings.module.js';
 import { TelegramBotModule } from '../telegram-bot/telegram-bot.module.js';
 import { PaylinkerClient } from './paylinker/paylinker.client.js';
 import { PaylinkerWebhookController } from './paylinker/paylinker-webhook.controller.js';
@@ -10,7 +11,7 @@ import { TopupsService } from './topups.service.js';
 
 /** Balansni to'ldirish (PAYMENTS.md). Pul balansga faqat `BalanceService.credit()` orqali kiradi. */
 @Module({
-  imports: [BalanceModule, TelegramBotModule],
+  imports: [BalanceModule, TelegramBotModule, SettingsModule],
   controllers: [TopupsController, PaylinkerWebhookController],
   providers: [
     {
@@ -24,5 +25,6 @@ import { TopupsService } from './topups.service.js';
     },
     TopupsService,
   ],
+  exports: [TopupsService],
 })
 export class PaymentsModule {}
