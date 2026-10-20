@@ -184,13 +184,36 @@ describe("Mijoz e'lonlari va balans (e2e)", () => {
     expect(await freeBalance()).toBe(150_000.5);
   });
 
-  it("menyu uchun lug'atlar, narx va balans", async () => {
+  it("menyu uchun lug'atlar, narx (faqat so'mda) va balans", async () => {
     const res = await api(owner.token).get('/api/ads/options').expect(200);
     expect(res.body).toMatchObject({
       topics: [{ topic_id: 48 }],
-      pricing: { uzsPerTon: 20_000, stale: false },
+      // 0.1 TON × 20 000 so'm
+      pricing: { minCpmUzs: 2_000, minBudgetUzs: 30_000, stale: false },
       balanceUzs: '150000.5',
     });
+    // Kurs va xizmat haqi mijozga chiqmaydi — ulardan marjani hisoblab bo'lardi.
+    expect(res.body.pricing).not.toHaveProperty('uzsPerTon');
+    expect(res.body.pricing).not.toHaveProperty('commissionPercent');
+    expect(res.body.pricing).not.toHaveProperty('marketUzsPerTon');
+    expect(res.body).not.toHaveProperty('recommendedCpmTon');
+    expect(res.body.recommendedCpmUzs.channel_post).toBeGreaterThanOrEqual(2_000);
+  });
+
+  it("ochiq narxlar (sayt uchun) — loginsiz, faqat so'mda", async () => {
+    const res = await http()
+      .get('/api/public/pricing')
+      .set('x-internal-secret', INTERNAL_SECRET)
+      .expect(200);
+    expect(res.body).toMatchObject({
+      minBudgetUzs: 30_000,
+      minCpmUzs: 2_000,
+      stale: false,
+    });
+    expect(res.body.paymentMethods).toContain('Click');
+    expect(JSON.stringify(res.body)).not.toMatch(/commission|uzsPerTon|market|TON/i);
+    // Sirsiz — yopiq (uni faqat Next server chaqiradi).
+    await http().get('/api/public/pricing').expect(403);
   });
 
   let adId: number;
@@ -292,6 +315,11 @@ describe("Mijoz e'lonlari va balans (e2e)", () => {
     await funding.updateSpend();
     const ad = await api(owner.token).get(`/api/ads/${adId}`).expect(200);
     expect(ad.body).toMatchObject({ spentUzs: '25000', heldUzs: '75000' });
+    // TON qiymatlari mijozga chiqmaydi, CPM faqat so'mda.
+    expect(ad.body).not.toHaveProperty('cpm');
+    expect(ad.body).not.toHaveProperty('remainingBudget');
+    expect(ad.body).not.toHaveProperty('currency');
+    expect(ad.body.cpmUzs).toBe('4000');
   });
 
   it("budjet qo'shiladi va yakunlashda qoldiq balansga qaytadi", async () => {

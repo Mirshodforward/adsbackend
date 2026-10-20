@@ -12,6 +12,7 @@ import { validateEnv, type Env } from './config/env.js';
 import { HealthController } from './health.controller.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { PublicModule } from './public/public.module.js';
 import { TelegramAdsModule } from './telegram-ads/telegram-ads.module.js';
 
 @Module({
@@ -36,6 +37,7 @@ import { TelegramAdsModule } from './telegram-ads/telegram-ads.module.js';
     AdsModule,
     PaymentsModule,
     AdminModule,
+    PublicModule,
   ],
   controllers: [HealthController],
   // Tartib muhim: avval "so'rov BFF'danmi", keyin "foydalanuvchi kim".

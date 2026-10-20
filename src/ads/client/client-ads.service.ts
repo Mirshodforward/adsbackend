@@ -48,11 +48,15 @@ export class ClientAdsService {
     private readonly options: AdsOptionsService,
   ) {}
 
+  /**
+   * E'lon yaratish menyusi. Narx faqat so'mda: kurs, xizmat haqi va TON
+   * qiymatlari mijozga yuborilmaydi — ulardan marjani hisoblab bo'lardi.
+   */
   async getOptions(userId: string) {
-    const [dictionaries, pricing, recommendedCpmTon, user] = await Promise.all([
+    const [dictionaries, pricing, recommendedCpmUzs, user] = await Promise.all([
       this.options.dictionaries(),
       this.pricing.getPricing(),
-      this.options.recommendedCpmTon(),
+      this.options.recommendedCpmUzs(),
       this.db.user.findUniqueOrThrow({
         where: { id: userId },
         select: { balanceUzs: true },
@@ -60,8 +64,12 @@ export class ClientAdsService {
     ]);
     return {
       ...dictionaries,
-      pricing,
-      recommendedCpmTon,
+      pricing: {
+        minBudgetUzs: pricing.minBudgetUzs,
+        minCpmUzs: pricing.minCpmUzs,
+        stale: pricing.stale,
+      },
+      recommendedCpmUzs,
       balanceUzs: user.balanceUzs,
     };
   }
@@ -354,15 +362,19 @@ export class ClientAdsService {
     createdAt: Date;
     ad: Record<string, unknown>;
   }) {
+    // TON qiymatlari (cpm, qoldiq, valyuta) mijozga chiqmaydi: so'mdagi narx
+    // bilan solishtirib, kursni va xizmat haqini hisoblab bo'lardi.
+    const { cpm, currency: _currency, remainingBudget: _remaining, ...ad } =
+      ca.ad;
     return {
       adId: ca.adId,
-      ...ca.ad,
+      ...ad,
       fundedUzs: ca.fundedUzs,
       spentUzs: ca.spentUzs,
       refundedUzs: ca.refundedUzs,
       /** 1000 ko'rish narxi so'mda — e'lonning o'rtacha kursi bo'yicha. */
       cpmUzs: ca.fundedTon.gt(0)
-        ? new Prisma.Decimal(String(ca.ad.cpm))
+        ? new Prisma.Decimal(String(cpm))
             .mul(ca.fundedUzs.div(ca.fundedTon))
             .toDecimalPlaces(0)
         : null,

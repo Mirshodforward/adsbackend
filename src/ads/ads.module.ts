@@ -24,6 +24,6 @@ import { FundingService } from './client/funding.service.js';
     FundingService,
     AdsOptionsService,
   ],
-  exports: [AdsSyncService, ClientAdsService, FundingService],
+  exports: [AdsSyncService, ClientAdsService, FundingService, AdsOptionsService],
 })
 export class AdsModule {}
