@@ -24,6 +24,8 @@ const telegramSchema = z
   .catchall(z.union([z.string().max(2048), z.number()]));
 
 const refreshSchema = z.object({ refreshToken: z.string().min(1).max(256) });
+/** Mini App: `window.Telegram.WebApp.initData` — xom query-string. */
+const webAppSchema = z.object({ initData: z.string().min(1).max(8192) });
 
 @Controller('auth')
 export class AuthController {
@@ -38,6 +40,17 @@ export class AuthController {
     @Req() req: Request,
   ) {
     return this.auth.loginWithTelegram(body, clientMeta(req));
+  }
+
+  /** Telegram Mini App ichidan: initData imzosi bilan kirish (widget'siz). */
+  @Public()
+  @Post('telegram-webapp')
+  @HttpCode(200)
+  telegramWebApp(
+    @Body(zodBody(webAppSchema)) body: z.infer<typeof webAppSchema>,
+    @Req() req: Request,
+  ) {
+    return this.auth.loginWithWebApp(body.initData, clientMeta(req));
   }
 
   @Public()

@@ -8,7 +8,11 @@ import { fail } from '../common/http.js';
 import type { Env } from '../config/env.js';
 import { Prisma, type Role, type User } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { verifyTelegramLogin } from './telegram-login.js';
+import {
+  verifyTelegramLogin,
+  type TelegramLoginCheck,
+} from './telegram-login.js';
+import { verifyWebAppInitData } from './telegram-webapp.js';
 
 /**
  * Almashtirilgan refresh token yana shuncha vaqt qabul qilinadi. Sahifa
@@ -70,6 +74,23 @@ export class AuthService {
       this.config.get('TELEGRAM_BOT_TOKEN', { infer: true }),
       this.config.get('TELEGRAM_AUTH_MAX_AGE_SEC', { infer: true }),
     );
+    return this.loginVerified(check, meta);
+  }
+
+  /** Telegram Mini App: `initData` (bot tokeni bilan imzolangan) — login widget'siz. */
+  async loginWithWebApp(initData: string, meta: ClientMeta): Promise<AuthResult> {
+    const check = verifyWebAppInitData(
+      initData,
+      this.config.get('TELEGRAM_BOT_TOKEN', { infer: true }),
+      this.config.get('TELEGRAM_AUTH_MAX_AGE_SEC', { infer: true }),
+    );
+    return this.loginVerified(check, meta);
+  }
+
+  private async loginVerified(
+    check: TelegramLoginCheck,
+    meta: ClientMeta,
+  ): Promise<AuthResult> {
     if (!check.ok) {
       fail(
         check.reason === 'expired'

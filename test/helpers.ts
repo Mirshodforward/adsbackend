@@ -14,3 +14,14 @@ export function widgetPayload(fields: Record<string, string | number>) {
   const hash = createHmac('sha256', secret).update(checkString).digest('hex');
   return { ...fields, hash };
 }
+
+/** Telegram Mini App `initData` — test bot tokeni bilan ("WebAppData" kaliti). */
+export function webAppInitData(fields: Record<string, string>) {
+  const checkString = Object.keys(fields)
+    .sort()
+    .map((k) => `${k}=${fields[k]}`)
+    .join('\n');
+  const secret = createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
+  const hash = createHmac('sha256', secret).update(checkString).digest('hex');
+  return new URLSearchParams({ ...fields, hash }).toString();
+}

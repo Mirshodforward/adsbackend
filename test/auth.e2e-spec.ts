@@ -4,10 +4,12 @@ import { randomInt } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { INTERNAL_SECRET, widgetPayload } from './helpers.js';
+import { INTERNAL_SECRET, webAppInitData, widgetPayload } from './helpers.js';
 
 // Haqiqiy foydalanuvchilar bilan to'qnashmaydigan id; afterAll'da o'chiriladi.
 const TELEGRAM_ID = 9_900_000_000 + randomInt(1_000_000);
+/** Mini App testi uchun alohida foydalanuvchi (asosiysi oxirida bloklanadi). */
+const MINI_APP_ID = TELEGRAM_ID + 1;
 
 describe('Auth (e2e)', () => {
   let app: INestApplication;
@@ -24,7 +26,9 @@ describe('Auth (e2e)', () => {
   });
 
   afterAll(async () => {
-    await db.user.deleteMany({ where: { telegramId: BigInt(TELEGRAM_ID) } });
+    await db.user.deleteMany({
+      where: { telegramId: { in: [BigInt(TELEGRAM_ID), BigInt(MINI_APP_ID)] } },
+    });
     await app.close();
   });
 
@@ -140,5 +144,26 @@ describe('Auth (e2e)', () => {
       .set('Authorization', `Bearer ${body.accessToken}`)
       .expect(401);
     await login().expect(403);
+  });
+  it("Mini App initData bilan kirish (widget'siz); soxta imzo — 401", async () => {
+    const initData = webAppInitData({
+      user: JSON.stringify({ id: MINI_APP_ID, first_name: 'Mini', username: 'e2e_mini' }),
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      query_id: 'AAE2Equery',
+    });
+    const res = await post('/api/auth/telegram-webapp')
+      .send({ initData })
+      .expect(200);
+    expect(res.body.user).toMatchObject({
+      telegramId: String(MINI_APP_ID),
+      firstName: 'Mini',
+    });
+    expect(res.body.accessToken).toBeTruthy();
+    expect(res.body.refreshToken).toBeTruthy();
+
+    await post('/api/auth/telegram-webapp')
+      .send({ initData: initData.replace(/hash=[0-9a-f]{64}/, `hash=${'0'.repeat(64)}`) })
+      .expect(401);
+    await post('/api/auth/telegram-webapp').send({ initData: '' }).expect(400);
   });
 });
