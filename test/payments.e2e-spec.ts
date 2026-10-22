@@ -8,6 +8,7 @@ import {
   PaylinkerError,
   type PaylinkerInvoice,
 } from '../src/payments/paylinker/paylinker.client.js';
+import { RateLimitGuard } from '../src/common/rate-limit.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { PricingService } from '../src/settings/pricing.service.js';
 import { TelegramBotService } from '../src/telegram-bot/telegram-bot.service.js';
@@ -186,6 +187,8 @@ describe('Payments (e2e)', () => {
   });
 
   beforeEach(() => vi.clearAllMocks());
+  // Har test o'z so'rov chegarasidan boshlaydi (fayl 10/daqiqadan ko'p to'ldirish ochadi).
+  beforeEach(() => app.get(RateLimitGuard).reset());
 
   it('usullar va chegaralar', async () => {
     const res = await api(ownerToken).get('/api/payments/methods').expect(200);
@@ -371,5 +374,45 @@ describe('Payments (e2e)', () => {
       where: { userId: ownerId, creditUzs: 90_000 },
     });
     expect(t).toMatchObject({ status: 'FAILED', error: 'NETWORK_ERROR' });
+  });
+  it("qaytarilgan to'ldirish kechikkan \"to'landi\" bilan yana PAID bo'lmaydi", async () => {
+    const before = await freeBalance();
+    const res = await createTopup('PAYME', 60_000).expect(201);
+    await webhook('invoice.paid', paidPayload(res.body.id)).expect(200);
+    expect(await freeBalance()).toBe(before + 60_000);
+
+    await webhook(
+      'invoice.refunded',
+      paidPayload(res.body.id, { status: 'REFUNDED' }),
+    ).expect(200);
+    expect(
+      (await db.topup.findUniqueOrThrow({ where: { id: res.body.id } })).status,
+    ).toBe('REFUNDED');
+
+    // Paylinker 6 soatgacha qayta uradi — eski "to'landi" qaytib kelishi mumkin.
+    const replay = await webhook('invoice.paid', paidPayload(res.body.id)).expect(200);
+    expect(replay.body.result).toBe('duplicate');
+    expect(
+      (await db.topup.findUniqueOrThrow({ where: { id: res.body.id } })).status,
+    ).toBe('REFUNDED');
+    expect(await freeBalance()).toBe(before + 60_000);
+  });
+
+  it("daqiqasiga 10 tadan ko'p to'ldirish boshlab bo'lmaydi (429)", async () => {
+    for (let i = 0; i < 10; i++) {
+      await api(otherToken)
+        .post('/api/payments/topups')
+        .send({ method: 'NOPE', amountUzs: 1 })
+        .expect(400);
+    }
+    await api(otherToken)
+      .post('/api/payments/topups')
+      .send({ method: 'NOPE', amountUzs: 1 })
+      .expect(429);
+    // Boshqa foydalanuvchiga ta'sir qilmaydi.
+    await api(ownerToken)
+      .post('/api/payments/topups')
+      .send({ method: 'NOPE', amountUzs: 1 })
+      .expect(400);
   });
 });

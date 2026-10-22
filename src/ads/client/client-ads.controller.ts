@@ -12,6 +12,7 @@ import { z } from 'zod';
 import type { AuthContext } from '../../common/auth-context.js';
 import { Auth } from '../../common/decorators.js';
 import { fail } from '../../common/http.js';
+import { RateLimit } from '../../common/rate-limit.js';
 import { zodBody } from '../../common/zod.pipe.js';
 import { ClientAdsService } from './client-ads.service.js';
 
@@ -73,7 +74,8 @@ const cpmSchema = z.object({
   cpmUzs: z.number().positive().max(10_000_000),
 });
 
-/** Mijozning o'z e'lonlari — har bir amal faqat egasiga. */
+/** Mijozning o'z e'lonlari — har bir amal faqat egasiga. Har amal umumiy Telegram tokeni orqali o'tadi — chegara shart. */
+@RateLimit(60)
 @Controller('ads')
 export class ClientAdsController {
   constructor(private readonly ads: ClientAdsService) {}
@@ -83,6 +85,7 @@ export class ClientAdsController {
     return this.ads.getOptions(ctx.userId);
   }
 
+  @RateLimit(30)
   @Get('resolve')
   resolve(@Query('kind') kind: string, @Query('q') q: string) {
     if (kind !== 'channel' && kind !== 'bot') fail('kind: channel yoki bot');
@@ -94,6 +97,7 @@ export class ClientAdsController {
     return this.ads.list(ctx.userId);
   }
 
+  @RateLimit(10)
   @Post()
   @HttpCode(201)
   create(

@@ -8,6 +8,7 @@ import { AdsModule } from './ads/ads.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { InternalSecretGuard } from './common/guards/internal-secret.guard.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
+import { RateLimitGuard } from './common/rate-limit.js';
 import { validateEnv, type Env } from './config/env.js';
 import { HealthController } from './health.controller.js';
 import { PaymentsModule } from './payments/payments.module.js';
@@ -44,6 +45,10 @@ import { TelegramAdsModule } from './telegram-ads/telegram-ads.module.js';
   providers: [
     { provide: APP_GUARD, useClass: InternalSecretGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Foydalanuvchi aniqlangandan keyin: chegara foydalanuvchi bo'yicha.
+    // Alohida provider ham — testlar `app.get(RateLimitGuard)` bilan tozalaydi.
+    RateLimitGuard,
+    { provide: APP_GUARD, useExisting: RateLimitGuard },
   ],
 })
 export class AppModule {}

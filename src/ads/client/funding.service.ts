@@ -15,12 +15,21 @@ import type {
   Ad as TgAd,
   CreateAdParams,
 } from '../../telegram-ads/telegram-ads.types.js';
+import { AdminAlertsService } from '../../telegram-bot/admin-alerts.service.js';
 import { toAdRow } from '../ad-row.js';
 
 /** Telegram yopiq e'londan budjetni faqat 10 daqiqa nofaollikdan keyin qaytaradi. */
 export const CLOSE_DELAY_MS = 11 * 60_000;
 /** So'rov yo'lida bajarilayotgan amalga sinxronlash aralashmasin. */
 const RECONCILE_AFTER_MS = 2 * 60_000;
+/**
+ * Telegram idempotentlik kalitini 24 soat eslaydi. Undan keyin xuddi shu kalit
+ * bilan qayta yuborish YANGI amal bo'lib ketishi mumkin (ikkinchi e'lon, ikki
+ * marta budjet). Shuning uchun shundan oldin to'xtab, adminga topshiramiz.
+ */
+const MAX_PENDING_AGE_MS = 20 * 3600_000;
+/** Yakunlash har 11 daqiqada qayta uriniladi — 12 urinish ≈ 2 soat. */
+const CLOSE_MAX_ATTEMPTS = 12;
 
 /** Javob kelmagan yoki server band — natija noma'lum, xuddi shu kalit bilan qayta urinish kerak. */
 function isRetryable(e: unknown) {
@@ -52,6 +61,7 @@ export class FundingService {
     private readonly db: PrismaService,
     private readonly ads: TelegramAdsClient,
     private readonly balance: BalanceService,
+    private readonly alerts: AdminAlertsService,
   ) {}
 
   /** Balansdan yechib, amalni yaratadi. Pul yetmasa — 402, hech narsa yozilmaydi. */
@@ -106,7 +116,8 @@ export class FundingService {
       else await this.complete(op, await this.call(op));
     } catch (e) {
       const code = errorCode(e);
-      if (op.kind === 'CLOSE_AD' || isRetryable(e)) {
+      const retry = op.kind === 'CLOSE_AD' || isRetryable(e);
+      if (retry && !this.exhausted(op)) {
         // Natija noma'lum yoki hali erta (yakunlash) — keyinroq qayta urinamiz.
         this.logger.warn(`${op.kind} ${op.id}: ${code} — qayta uriniladi`);
         await this.db.fundingOperation.update({
@@ -119,6 +130,8 @@ export class FundingService {
             }),
           },
         });
+      } else if (retry) {
+        await this.giveUp(op, code);
       } else {
         this.logger.warn(`${op.kind} ${op.id}: ${code} — pul qaytarildi`);
         await this.failAndRefund(op, code);
@@ -169,6 +182,32 @@ export class FundingService {
     }
   }
 
+  /** Qayta urinishlar tugadimi: yakunlash — soni bo'yicha, qolganlari — yoshi bo'yicha. */
+  private exhausted(op: FundingOperation) {
+    return op.kind === 'CLOSE_AD'
+      ? op.attempts + 1 >= CLOSE_MAX_ATTEMPTS
+      : Date.now() - op.createdAt.getTime() > MAX_PENDING_AGE_MS;
+  }
+
+  /**
+   * Natija noma'lumligicha qoldi. Pul AVTOMATIK qaytarilmaydi — Telegram
+   * amalni bajargan bo'lishi mumkin (ikki marta to'lab qo'ymaylik). Admin
+   * Telegram'da tekshirib, kerak bo'lsa balansni qo'lda tuzatadi.
+   */
+  private async giveUp(op: FundingOperation, code: string) {
+    const r = await this.db.fundingOperation.updateMany({
+      where: { id: op.id, status: 'PENDING' },
+      data: { status: 'FAILED', error: `GIVE_UP:${code}`, attempts: { increment: 1 } },
+    });
+    if (!r.count) return;
+    this.logger.error(`${op.kind} ${op.id}: ${code} — urinishlar tugadi, admin tekshiruvi kerak`);
+    void this.alerts.send(
+      `🚨 Pul amali hal bo'lmadi: ${op.kind} #${op.id}\n` +
+        `Mijoz ${op.userId}, e'lon ${op.adId ?? '—'}, ${op.amountUzs.toString()} so'm (${op.amountTon.toString()} TON), xato: ${code}.\n` +
+        `Telegram Ads'da natijani tekshiring; kerak bo'lsa admin panelda balansni tuzating.`,
+    );
+  }
+
   private call(op: FundingOperation): Promise<TgAd> {
     const request = op.request as unknown as CreateAdParams;
     if (op.kind === 'CREATE_AD') {
@@ -181,7 +220,19 @@ export class FundingService {
     });
   }
 
-  private async complete(op: FundingOperation, ad: TgAd) {
+  private async complete(op: FundingOperation, created: TgAd) {
+    let ad = created;
+    // API orqali yaratilgan e'lon `ready_for_review` bo'lib qolishi mumkin —
+    // moderatsiyaga o'zi tushmaydi, aniq yuboramiz (sinxronlash ham tekshiradi).
+    if (op.kind === 'CREATE_AD' && ad.status === 'ready_for_review') {
+      try {
+        ad = await this.ads.submitAdForReview({ ad_id: ad.ad_id });
+      } catch (e) {
+        this.logger.warn(
+          `submitAdForReview ${ad.ad_id}: ${errorCode(e)} — sinxronlash qayta urinadi`,
+        );
+      }
+    }
     const row = toAdRow(ad);
     await this.db.$transaction(async (tx) => {
       const claimed = await tx.fundingOperation.updateMany({
@@ -221,9 +272,23 @@ export class FundingService {
 
   private async close(op: FundingOperation) {
     const adId = op.adId!;
-    const [current] = await this.ads.getAdsById({ ad_ids: [adId] });
-    let remaining = current?.remaining_budget ?? 0;
-    let ad = current;
+    // Qayta urinish: avvalgi urinishda yozilgan qoldiq — xuddi shu summa, xuddi
+    // shu kalit. Aks holda Telegram allaqachon qaytargan bo'lsa, qoldiq 0
+    // ko'rinib, mijozga hech narsa qaytmasdi.
+    let remaining = op.amountTon.toNumber();
+    let ad: TgAd | undefined;
+    if (!(remaining > 0)) {
+      const [current] = await this.ads.getAdsById({ ad_ids: [adId] });
+      ad = current;
+      remaining = current?.remaining_budget ?? 0;
+      if (remaining > 0) {
+        // Telegram'ga yuborishdan OLDIN saqlanadi.
+        await this.db.fundingOperation.update({
+          where: { id: op.id },
+          data: { amountTon: remaining },
+        });
+      }
+    }
     if (remaining > 0) {
       ad = await this.ads.decreaseAdBudget({
         ad_id: adId,
@@ -288,5 +353,11 @@ export class FundingService {
         note: `Telegram qabul qilmadi: ${code}`,
       });
     });
+    // Mijozga pul qaytdi; admin esa sababni bilsin (masalan TON tugagan).
+    void this.alerts.send(
+      `⚠️ Telegram rad etdi: ${op.kind} #${op.id} — ${code}. ` +
+        `${op.amountUzs.toString()} so'm mijozga qaytarildi.`,
+      { key: `funding-failed:${code}`, everyMs: 30 * 60_000 },
+    );
   }
 }

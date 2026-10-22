@@ -284,4 +284,38 @@ describe('Admin paneli (e2e)', () => {
     const funding = await api(admin.token).get('/api/admin/funding').expect(200);
     expect(funding.body.operations).toEqual(expect.any(Array));
   });
+  it("admin o'z balansini tuzata olmaydi; qo'lda kurs bozor kursidan 2 barobar farq qilsa — 400", async () => {
+    await api(admin.token)
+      .post(`/api/admin/users/${admin.id}/adjust`)
+      .send({ amountUzs: 10_000, note: "O'zimga" })
+      .expect(400);
+
+    const hadRate = !!(await db.setting.findUnique({ where: { key: 'ton_rate' } }));
+    if (!hadRate) {
+      await db.setting.create({
+        data: {
+          key: 'ton_rate',
+          value: {
+            uzsPerTon: 20_000,
+            tonUsd: 1.6,
+            usdUzs: 12_500,
+            fetchedAt: new Date().toISOString(),
+          },
+        },
+      });
+    }
+    try {
+      await api(admin.token)
+        .put('/api/admin/settings')
+        .send({ manualUzsPerTon: 2_000 })
+        .expect(400);
+      const ok = await api(admin.token)
+        .put('/api/admin/settings')
+        .send({ manualUzsPerTon: 25_000 })
+        .expect(200);
+      expect(ok.body.manualUzsPerTon).toBe(25_000);
+    } finally {
+      if (!hadRate) await db.setting.delete({ where: { key: 'ton_rate' } });
+    }
+  });
 });

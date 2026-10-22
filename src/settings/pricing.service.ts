@@ -2,13 +2,17 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { z } from 'zod';
+import { fail } from '../common/http.js';
 import type { Env } from '../config/env.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AdminAlertsService } from '../telegram-bot/admin-alerts.service.js';
 
 const PRICING_KEY = 'pricing';
 const RATE_KEY = 'ton_rate';
 /** Bundan eski bozor kursi bilan pul amallari bajarilmaydi (qo'lda kurs bo'lmasa). */
 const RATE_MAX_AGE_MS = 24 * 3600_000;
+/** Kurs shundan eski bo'lib, yangilab bo'lmasa — adminga xabar. */
+const RATE_ALERT_AGE_MS = 6 * 3600_000;
 
 /**
  * Platforma sozlamalari — admin panelida o'zgartiriladi, bazada bitta JSON.
@@ -21,14 +25,14 @@ export const pricingSchema = z.object({
    */
   commissionPercent: z.number().min(0).max(300).default(50),
   /** Bitta e'longa ajratiladigan eng kam budjet (so'm). */
-  minBudgetUzs: z.number().int().positive().default(50_000),
+  minBudgetUzs: z.number().int().positive().max(50_000_000).default(50_000),
   /** Telegram minimal CPM'ini aniq e'lon qilmaydi — xavfsiz pastki chegara (TON). */
   minCpmTon: z.number().positive().default(0.1),
   /** Bo'lsa — bozor kursi o'rniga ishlatiladi (1 TON necha so'm, xizmat haqisiz). */
   manualUzsPerTon: z.number().positive().nullable().default(null),
   /** Balansni to'ldirish: bir martalik summa chegaralari (so'm). */
   topupMinUzs: z.number().int().positive().default(50_000),
-  topupMaxUzs: z.number().int().positive().default(10_000_000),
+  topupMaxUzs: z.number().int().positive().max(100_000_000).default(10_000_000),
   /** Mijoz to'lovga qo'shimcha to'laydigan komissiya (%). 0 — komissiyani biz ko'taramiz. */
   topupFeePercent: z.number().min(0).max(50).default(0),
 });
@@ -69,6 +73,7 @@ export class PricingService implements OnApplicationBootstrap {
   constructor(
     private readonly db: PrismaService,
     private readonly config: ConfigService<Env, true>,
+    private readonly alerts: AdminAlertsService,
   ) {}
 
   onApplicationBootstrap() {
@@ -88,11 +93,22 @@ export class PricingService implements OnApplicationBootstrap {
       const rate = await this.fetchMarketRate();
       await this.save(RATE_KEY, rate);
       this.logger.log(`Kurs: 1 TON = ${rate.uzsPerTon} so'm`);
+      this.alerts.clear('rate-stale');
       return rate;
     } catch (e) {
-      this.logger.warn(
-        `Kursni olib bo'lmadi: ${e instanceof Error ? e.message : e}`,
-      );
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.warn(`Kursni olib bo'lmadi: ${msg}`);
+      // Saqlangan kurs eskirib borayotgan bo'lsa — admin bilsin (24 soatdan keyin sotuv to'xtaydi).
+      const saved = await this.load(RATE_KEY, rateSchema);
+      const age = saved ? Date.now() - Date.parse(saved.fetchedAt) : Infinity;
+      if (age > RATE_ALERT_AGE_MS) {
+        void this.alerts.send(
+          `⚠️ TON kursini olib bo'lmayapti: ${msg}\n` +
+            `Oxirgi kurs ${saved ? Math.round(age / 3600_000) + ' soat oldin' : "hech qachon olinmagan"}. ` +
+            `${RATE_MAX_AGE_MS / 3600_000} soatdan keyin yangi e'lonlar to'xtaydi — admin panelda qo'lda kurs qo'yish mumkin.`,
+          { key: 'rate-stale', everyMs: 6 * 3600_000 },
+        );
+      }
       return null;
     }
   }
@@ -129,6 +145,20 @@ export class PricingService implements OnApplicationBootstrap {
   }
 
   async updateSettings(patch: Partial<PricingSettings>) {
+    // Qo'lda kurs bozor kursidan 2 barobardan ko'p farq qilsa — katta ehtimol
+    // xato terilgan (bitta nol). Shunday kurs hamma e'lonni noto'g'ri narxlaydi.
+    if (patch.manualUzsPerTon != null) {
+      const rate = await this.load(RATE_KEY, rateSchema);
+      if (
+        rate &&
+        (patch.manualUzsPerTon < rate.uzsPerTon / 2 ||
+          patch.manualUzsPerTon > rate.uzsPerTon * 2)
+      ) {
+        fail(
+          `Qo'lda kurs (${patch.manualUzsPerTon}) bozor kursidan (${rate.uzsPerTon}) 2 barobardan ko'p farq qiladi — tekshiring`,
+        );
+      }
+    }
     const next = pricingSchema.parse({ ...(await this.settings()), ...patch });
     await this.save(PRICING_KEY, next);
     return this.getPricing();

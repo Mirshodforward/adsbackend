@@ -320,8 +320,9 @@ export class TopupsService {
             note: `${topup.method} orqali to'ldirish (${topup.id})`,
           },
         );
+        // Qaytarilgan to'ldirish kechikkan/takror "to'landi" bilan yana PAID bo'lmasin.
         await this.db.topup.updateMany({
-          where: { id: topup.id, status: { not: 'PAID' } },
+          where: { id: topup.id, status: { notIn: ['PAID', 'REFUNDED'] } },
           data: {
             status: 'PAID',
             paidAt: new Date(),

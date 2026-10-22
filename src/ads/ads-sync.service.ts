@@ -8,6 +8,8 @@ import type {
   Account,
   Ad as TgAd,
 } from '../telegram-ads/telegram-ads.types.js';
+import { PricingService } from '../settings/pricing.service.js';
+import { AdminAlertsService } from '../telegram-bot/admin-alerts.service.js';
 import { TelegramBotService } from '../telegram-bot/telegram-bot.service.js';
 import { toAdRow } from './ad-row.js';
 import { FundingService } from './client/funding.service.js';
@@ -16,6 +18,10 @@ import { FundingService } from './client/funding.service.js';
 const BACKFILL_SEC = 72 * 3600;
 const STATS_RETENTION_MS = 30 * 24 * 3600_000;
 const STATS_INTERVAL = 300;
+/** Shuncha ketma-ket yiqilgandan keyin adminga xabar. */
+const FAILURES_BEFORE_ALERT = 3;
+/** Hisobda hech bo'lmaganda shuncha TON tursin (mijoz balanslaridan qat'i nazar). */
+const MIN_TREASURY_TON = 5;
 
 interface StatusChange {
   ad: TgAd;
@@ -35,12 +41,15 @@ export class AdsSyncService implements OnApplicationBootstrap {
   /** Oxirgi sinxronlashdagi hisob holati — admin sahifasi API'ni har safar chaqirmasin. */
   account: Account | null = null;
   lastSyncAt: Date | null = null;
+  private failures = 0;
 
   constructor(
     private readonly db: PrismaService,
     private readonly ads: TelegramAdsClient,
     private readonly funding: FundingService,
     private readonly bot: TelegramBotService,
+    private readonly alerts: AdminAlertsService,
+    private readonly pricing: PricingService,
     private readonly config: ConfigService<Env, true>,
   ) {}
 
@@ -53,11 +62,25 @@ export class AdsSyncService implements OnApplicationBootstrap {
   async scheduled() {
     if (!this.config.get('ADS_SYNC_ENABLED', { infer: true })) return;
     try {
-      await this.run();
+      const result = await this.run();
+      if (result && this.failures >= FAILURES_BEFORE_ALERT) {
+        void this.alerts.send('✅ Telegram Ads bilan sinxronlash tiklandi.');
+      }
+      if (result) {
+        this.failures = 0;
+        this.alerts.clear('sync-failed');
+      }
     } catch (e) {
-      this.logger.error(
-        `Sinxronlash yiqildi: ${e instanceof Error ? e.message : e}`,
-      );
+      const msg = e instanceof Error ? e.message : String(e);
+      this.logger.error(`Sinxronlash yiqildi: ${msg}`);
+      this.failures += 1;
+      if (this.failures >= FAILURES_BEFORE_ALERT) {
+        void this.alerts.send(
+          `🚨 Telegram Ads bilan sinxronlash ${this.failures} marta ketma-ket yiqildi: ${msg}\n` +
+            `E'lon holatlari, sarf va qoldiq qaytarish yangilanmayapti.`,
+          { key: 'sync-failed', everyMs: 2 * 3600_000 },
+        );
+      }
     }
   }
 
@@ -74,6 +97,7 @@ export class AdsSyncService implements OnApplicationBootstrap {
       await this.funding.updateSpend();
       this.account = account;
       this.lastSyncAt = new Date();
+      await this.checkTreasury(account);
       return { ads: ads.length };
     } finally {
       this.running = false;
@@ -94,7 +118,7 @@ export class AdsSyncService implements OnApplicationBootstrap {
   private async sync(ads: TgAd[]) {
     const now = Math.floor(Date.now() / 1000);
     const changes: StatusChange[] = [];
-    for (const ad of ads) {
+    for (let ad of ads) {
       const prev = await this.db.ad.findUnique({
         where: { adId: ad.ad_id },
         select: {
@@ -105,6 +129,20 @@ export class AdsSyncService implements OnApplicationBootstrap {
           },
         },
       });
+      // Mijoz e'loni moderatsiyaga yuborilmay qolgan bo'lsa — yuboramiz.
+      if (
+        prev?.clientAd &&
+        !prev.clientAd.closedAt &&
+        ad.status === 'ready_for_review'
+      ) {
+        try {
+          ad = await this.ads.submitAdForReview({ ad_id: ad.ad_id });
+        } catch (e) {
+          this.logger.warn(
+            `submitAdForReview ${ad.ad_id}: ${e instanceof Error ? e.message : e}`,
+          );
+        }
+      }
       if (
         prev?.clientAd &&
         !prev.clientAd.closedAt &&
@@ -132,6 +170,38 @@ export class AdsSyncService implements OnApplicationBootstrap {
       where: { fromTime: { lt: new Date(Date.now() - STATS_RETENTION_MS) } },
     });
     for (const change of changes) await this.notifyOwner(change);
+  }
+
+  /**
+   * Platformaning TON hisobi mijoz balanslarini qoplashi kerak: mijozlar bo'sh
+   * balansini e'longa aylantirganda Telegram'ga shuncha TON ketadi. Kam bo'lsa,
+   * yangi e'lonlar rad etiladi — adminga oldindan xabar.
+   */
+  private async checkTreasury(account: Account) {
+    try {
+      const [{ _sum }, pricing] = await Promise.all([
+        this.db.user.aggregate({ _sum: { balanceUzs: true } }),
+        this.pricing.getPricing(),
+      ]);
+      const owedUzs = _sum.balanceUzs?.toNumber() ?? 0;
+      const needTon =
+        pricing.uzsPerTon > 0 ? owedUzs / pricing.uzsPerTon : 0;
+      const floor = Math.max(needTon, MIN_TREASURY_TON);
+      if (account.remaining_budget < floor) {
+        void this.alerts.send(
+          `⚠️ Telegram Ads hisobida TON kam: ${account.remaining_budget} TON.\n` +
+            `Mijoz balanslari (${Math.round(owedUzs).toLocaleString('ru-RU')} so'm) uchun kamida ${needTon.toFixed(2)} TON kerak, ` +
+            `eng kam zaxira — ${MIN_TREASURY_TON} TON. Hisobni to'ldiring, aks holda yangi e'lonlar rad etiladi.`,
+          { key: 'ton-low', everyMs: 6 * 3600_000 },
+        );
+      } else {
+        this.alerts.clear('ton-low');
+      }
+    } catch (e) {
+      this.logger.warn(
+        `TON zaxirasini tekshirib bo'lmadi: ${e instanceof Error ? e.message : e}`,
+      );
+    }
   }
 
   /** Mijozga: e'lon moderatsiyadan o'tdi, rad etildi yoki budjeti tugadi. */

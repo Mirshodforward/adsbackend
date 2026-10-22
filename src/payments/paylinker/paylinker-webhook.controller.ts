@@ -12,6 +12,7 @@ import type { Request } from 'express';
 import { z } from 'zod';
 import { AllowDirect, Public } from '../../common/decorators.js';
 import { fail } from '../../common/http.js';
+import { SkipRateLimit } from '../../common/rate-limit.js';
 import type { Env } from '../../config/env.js';
 import { TopupsService } from '../topups.service.js';
 import { verifyPaylinkerSignature } from './paylinker-signature.js';
@@ -44,6 +45,8 @@ const payloadSchema = z.object({
  *   - bizda yo'q to'ldirish → 200 (qayta urish foyda bermaydi);
  *   - ichki xato → 500 (qayta ursin, `applyInvoice` takrorga chidamli).
  */
+// Paylinker nginx orqali bitta IP'dan keladi — umumiy chegara unga tegmasin (imzo himoya qiladi).
+@SkipRateLimit()
 @Controller('payments/paylinker')
 export class PaylinkerWebhookController {
   private readonly logger = new Logger(PaylinkerWebhookController.name);

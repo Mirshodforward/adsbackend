@@ -333,6 +333,7 @@ export class AdminService {
     amountUzs: number,
     note: string,
   ) {
+    if (adminId === userId) fail("O'z balansingizni o'zingiz tuzata olmaysiz");
     const [admin, user] = await Promise.all([
       this.db.user.findUniqueOrThrow({
         where: { id: adminId },

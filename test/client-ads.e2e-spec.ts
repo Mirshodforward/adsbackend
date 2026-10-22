@@ -19,6 +19,8 @@ let nextAdId = 910_000_000 + randomInt(1_000_000);
 
 /** Soxta Telegram Ads hisobi: e'lonlar xotirada, haqiqiy TON sarflanmaydi. */
 const remote = new Map<number, TgAd>();
+/** Bajarilgan idempotent so'rovlar (kalit → natija). */
+const doneKeys = new Map<string, TgAd>();
 const fakeAds = {
   createAd: vi.fn(
     async (p: { initial_budget: number; idempotency_key: string }) => {
@@ -47,9 +49,20 @@ const fakeAds = {
     ad.remaining_budget += p.amount;
     return { ...ad };
   }),
-  decreaseAdBudget: vi.fn(async (p: { ad_id: number; amount: number }) => {
+  decreaseAdBudget: vi.fn(
+    async (p: { ad_id: number; amount: number; idempotency_key?: string }) => {
+      // Telegram kabi: bir xil kalit bilan takror so'rov birinchi natijani qaytaradi.
+      const cached = p.idempotency_key && doneKeys.get(p.idempotency_key);
+      if (cached) return { ...cached };
+      const ad = remote.get(p.ad_id)!;
+      ad.remaining_budget -= p.amount;
+      if (p.idempotency_key) doneKeys.set(p.idempotency_key, { ...ad });
+      return { ...ad };
+    },
+  ),
+  submitAdForReview: vi.fn(async (p: { ad_id: number }) => {
     const ad = remote.get(p.ad_id)!;
-    ad.remaining_budget -= p.amount;
+    ad.status = 'in_review';
     return { ...ad };
   }),
   editAd: vi.fn(async (p: { ad_id: number; is_paused?: boolean }) => {
@@ -370,5 +383,110 @@ describe("Mijoz e'lonlari va balans (e2e)", () => {
       .post(`/api/ads/${adId}/budget`)
       .send({ amountUzs: 20_000 })
       .expect(409);
+  });
+  it("ready_for_review holatida yaratilgan e'lon moderatsiyaga yuboriladi", async () => {
+    await balance.credit(owner.id, 100_000, {
+      source: 'E2E',
+      externalId: `inv3-${OWNER_TG}`,
+    });
+    fakeAds.createAd.mockImplementationOnce(
+      async (p: { initial_budget: number }) => {
+        const id = nextAdId++;
+        const ad = {
+          ad_id: id,
+          title: 't',
+          text: 'matn',
+          promote_url: 'https://t.me/example_bot',
+          currency: 'TON',
+          cpm: 0.2,
+          placement: 'channel_post',
+          spent_budget: 0,
+          remaining_budget: p.initial_budget,
+          views: 0,
+          actions: 0,
+          created_date: 1_760_000_000,
+          status: 'ready_for_review',
+        } as TgAd;
+        remote.set(id, ad);
+        return ad;
+      },
+    );
+    const res = await api(owner.token)
+      .post('/api/ads')
+      .send({ ...adInput, budgetUzs: 30_000 })
+      .expect(201);
+    expect(fakeAds.submitAdForReview).toHaveBeenCalledWith({
+      ad_id: res.body.adId,
+    });
+    const ad = await db.ad.findUniqueOrThrow({ where: { adId: res.body.adId } });
+    expect(ad.status).toBe('in_review');
+  });
+
+  it("yakunlash: Telegram javobi yo'qolsa ham qoldiq bir marta va to'liq qaytadi; yakunlanayotgan e'lon o'zgartirilmaydi", async () => {
+    const before = await freeBalance();
+    const res = await api(owner.token)
+      .post('/api/ads')
+      .send({ ...adInput, budgetUzs: 40_000 }) // 2 TON (20 000 so'm/TON)
+      .expect(201);
+    const id = res.body.adId as number;
+    expect(await freeBalance()).toBe(before - 40_000);
+
+    await api(owner.token).post(`/api/ads/${id}/close`).expect(200);
+    // Yakunlash navbatda — davom ettirish, budjet, narx yopiq.
+    await api(owner.token).post(`/api/ads/${id}/resume`).expect(409);
+    await api(owner.token)
+      .post(`/api/ads/${id}/budget`)
+      .send({ amountUzs: 20_000 })
+      .expect(409);
+    await api(owner.token)
+      .post(`/api/ads/${id}/cpm`)
+      .send({ cpmUzs: 5_000 })
+      .expect(409);
+
+    const op = await db.fundingOperation.findFirstOrThrow({
+      where: { adId: id, kind: 'CLOSE_AD' },
+    });
+    await db.fundingOperation.update({
+      where: { id: op.id },
+      data: { notBefore: new Date(Date.now() - 1000) },
+    });
+
+    // 1-urinish: Telegram budjetni qaytardi, lekin javob yo'lda yo'qoldi.
+    fakeAds.decreaseAdBudget.mockImplementationOnce(
+      async (p: { ad_id: number; amount: number; idempotency_key?: string }) => {
+        const ad = remote.get(p.ad_id)!;
+        ad.remaining_budget -= p.amount;
+        doneKeys.set(p.idempotency_key!, { ...ad });
+        throw new TelegramAdsError('NETWORK_ERROR', 'decreaseAdBudget');
+      },
+    );
+    await funding.reconcile();
+    const mid = await db.fundingOperation.findUniqueOrThrow({
+      where: { id: op.id },
+    });
+    expect(mid).toMatchObject({ status: 'PENDING', attempts: 1 });
+    // Telegram'ga yuborishdan oldin yozilgan qoldiq.
+    expect(mid.amountTon.toNumber()).toBe(2);
+    expect(remote.get(id)!.remaining_budget).toBe(0);
+    expect(await freeBalance()).toBe(before - 40_000);
+
+    // 2-urinish (11 daqiqadan keyin): xuddi shu kalit → Telegram eski natijani qaytaradi.
+    await db.fundingOperation.update({
+      where: { id: op.id },
+      data: { notBefore: new Date(Date.now() - 1000) },
+    });
+    await funding.reconcile();
+    expect(fakeAds.decreaseAdBudget).toHaveBeenCalledTimes(2);
+    expect(fakeAds.decreaseAdBudget.mock.calls[1][0]).toMatchObject({
+      ad_id: id,
+      amount: 2,
+      idempotency_key: op.id,
+    });
+    expect(
+      await db.fundingOperation.findUniqueOrThrow({ where: { id: op.id } }),
+    ).toMatchObject({ status: 'DONE' });
+    expect(await freeBalance()).toBe(before); // 40 000 to'liq qaytdi
+    const ad = await api(owner.token).get(`/api/ads/${id}`).expect(200);
+    expect(ad.body).toMatchObject({ refundedUzs: '40000', heldUzs: '0' });
   });
 });

@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { z } from 'zod';
 import type { AuthContext } from '../common/auth-context.js';
 import { Auth } from '../common/decorators.js';
+import { RateLimit } from '../common/rate-limit.js';
 import { zodBody } from '../common/zod.pipe.js';
 import { TopupsService } from './topups.service.js';
 
@@ -21,6 +22,7 @@ export class TopupsController {
     return { methods: this.topups.methods(), ...(await this.topups.limits()) };
   }
 
+  @RateLimit(10)
   @Post('topups')
   create(
     @Auth() ctx: AuthContext,

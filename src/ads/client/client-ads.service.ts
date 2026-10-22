@@ -16,6 +16,7 @@ import {
 } from './ad-request.js';
 import { AdsOptionsService } from './ads-options.service.js';
 import { FundingService } from './funding.service.js';
+import { tgErrorMessage } from './tg-errors.js';
 
 /** Qo'shimcha budjet uchun pastki chegara (so'm). */
 const MIN_TOP_UP_UZS = 10_000;
@@ -115,7 +116,7 @@ export class ClientAdsService {
     const result = await this.funding.execute(op);
     if (result.status === 'FAILED') {
       fail(
-        `Telegram e'lonni qabul qilmadi (${result.error}). Pul balansingizga qaytarildi.`,
+        `${tgErrorMessage(result.error)}. Pul balansingizga qaytarildi.`,
         422,
       );
     }
@@ -221,7 +222,7 @@ export class ClientAdsService {
       await this.db.ad.update({ where: { adId }, data: toAdRow(ad) });
     } catch (e) {
       if (e instanceof TelegramAdsError)
-        fail(`Telegram xatosi: ${e.code}`, 502);
+        fail(tgErrorMessage(e.code), 502);
       throw e;
     }
     return this.detail(userId, adId);
@@ -255,7 +256,7 @@ export class ClientAdsService {
     const result = await this.funding.execute(op);
     if (result.status === 'FAILED') {
       fail(
-        `Telegram budjetni qabul qilmadi (${result.error}). Pul balansingizga qaytarildi.`,
+        `${tgErrorMessage(result.error)}. Pul balansingizga qaytarildi.`,
         422,
       );
     }
@@ -291,7 +292,7 @@ export class ClientAdsService {
       await this.db.ad.update({ where: { adId }, data: toAdRow(ad) });
     } catch (e) {
       if (e instanceof TelegramAdsError)
-        fail(`Telegram xatosi: ${e.code}`, 502);
+        fail(tgErrorMessage(e.code), 502);
       throw e;
     }
     return this.detail(userId, adId);
@@ -335,7 +336,7 @@ export class ClientAdsService {
         await this.db.ad.update({ where: { adId: ca.adId }, data: toAdRow(ad) });
       } catch (e) {
         if (e instanceof TelegramAdsError)
-          fail(`Telegram xatosi: ${e.code}`, 502);
+          fail(tgErrorMessage(e.code), 502);
         throw e;
       }
     }
@@ -349,6 +350,12 @@ export class ClientAdsService {
     });
     if (!ca) fail("E'lon topilmadi", 404);
     if (ca.closedAt) fail("E'lon yakunlangan", 409);
+    // Yakunlash navbatda turganda davom ettirish/budjet/narx — Telegram'da
+    // qoldiqni qaytarib bo'lmay qoladi (10 daqiqa nofaollik qoidasi).
+    const closing = await this.db.fundingOperation.count({
+      where: { adId, kind: 'CLOSE_AD', status: 'PENDING' },
+    });
+    if (closing) fail("E'lon yakunlanmoqda — o'zgartirib bo'lmaydi", 409);
     return ca;
   }
 

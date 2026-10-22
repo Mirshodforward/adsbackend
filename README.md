@@ -122,6 +122,26 @@ panelida ham berish mumkin. `src/admin`, barcha endpoint'lar `@AdminOnly()`:
 | `GET /admin/funding` | Kutilayotgan / yiqilgan pul amallari |
 | `GET/PUT /admin/settings` · `POST /admin/settings/refresh-rate` | Narx sozlamalari; bozor kursini hozir yangilash |
 
+## Ogohlantirishlar va chegaralar
+
+Adminlarga (`ADMIN_TELEGRAM_IDS`) bot orqali xabar ketadi (`AdminAlertsService`, bir xil holat
+6 soatda bir marta):
+
+- Telegram Ads hisobida TON mijoz balanslarini qoplamaydi yoki 5 TON'dan kam (har sinxronlashda);
+- bozor kursini 6 soatdan beri olib bo'lmayapti (24 soatdan keyin yangi e'lonlar to'xtaydi);
+- sinxronlash 3 marta ketma-ket yiqildi (va tiklandi);
+- Telegram pul amalini rad etdi (mijozga pul qaytdi) yoki amal 20 soat / 12 urinishdan keyin
+  ham hal bo'lmadi (`GIVE_UP:` — pul avtomatik qaytarilmaydi, admin Telegram'da tekshiradi);
+- to'ldirish kam to'langan yoki qaytarilgan.
+
+Yakunlashda qoldiq Telegram'ga yuborishdan **oldin** `FundingOperation.amountTon`ga yoziladi —
+jarayon o'rtada uzilsa, qayta urinish xuddi shu summani xuddi shu kalit bilan yuboradi.
+API orqali yaratilgan e'lon `ready_for_review` bo'lsa, `submitAdForReview` avtomatik chaqiriladi.
+
+So'rov chegarasi (`src/common/rate-limit.ts`, xotirada, foydalanuvchi yoki BFF uzatgan IP bo'yicha):
+umumiy 120/daqiqa; `/ads` 60/daqiqa, e'lon yaratish 10/daqiqa, `resolve` 30/daqiqa, to'ldirish
+yaratish 10/daqiqa; health va webhook chegarasiz. Oshsa — 429.
+
 ## Buyruqlar
 
 | Buyruq              | Nima qiladi                                                                  |
