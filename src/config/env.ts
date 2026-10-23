@@ -57,6 +57,11 @@ const envSchema = z
       ),
     // Bot xabaridagi havolalar uchun.
     FRONTEND_URL: z.url().default('https://osontarget.uz'),
+    // TON/USDT narxi uchun tonapi.io kaliti. Bo'sh bo'lsa yoki yiqilsa — Binance.
+    TONAPI_KEY: z
+      .string()
+      .optional()
+      .transform((v) => v || undefined),
 
     // ─── To'lovlar: balansni to'ldirish (PAYMENTS.md) ───────────────────
     // Paylinker → OsonTarget loyihasi. Kalit bo'sh bo'lsa to'lov o'chiq:

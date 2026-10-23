@@ -83,15 +83,16 @@ Telegram Ads bilan hisob-kitob TON'da. O'rtadagi kurs (`src/settings/pricing.ser
 
 ```
 mijoz narxi (1 TON) = bozor kursi × (1 + xizmat haqi %)
-bozor kursi         = TON/USD (Binance) × USD/UZS (Markaziy bank), har soatda yangilanadi
+bozor kursi         = TON/USDT (tonapi.io, `TONAPI_KEY`; zaxira — Binance) × USDT/so'm (admin
+                      sozlamasidagi qo'lda kurs, standart 12 250; bo'sh bo'lsa Markaziy bank), har soatda
 ```
 
-Standart xizmat haqi — **50%**: mijoz e'longa 150 000 so'm ajratsa, Telegram'ga 100 000 so'mlik
+Standart xizmat haqi — **30%**: mijoz e'longa 130 000 so'm ajratsa, Telegram'ga 100 000 so'mlik
 TON ketadi, farq platformaniki. Sarf har sinxronlashda e'lonning *o'z* kursi bo'yicha so'mga
 aylanadi (`ClientAd.fundedUzs / fundedTon`) — kurs keyin o'zgarsa ham mijozga ta'sir qilmaydi.
 E'lon yakunlansa, ishlatilmagan qoldiq shu kurs bo'yicha balansga qaytadi.
 
-Admin panelida o'zgartiriladi: xizmat haqi, qo'lda kurs, minimal budjet, minimal CPM (TON — Telegram
+Admin panelida o'zgartiriladi: xizmat haqi, qo'lda TON kursi, USDT kursi, minimal budjet, minimal CPM (TON — Telegram
 chegarasi), to'ldirish chegaralari (standart 50 000 – 10 000 000 so'm) va to'lov komissiyasi.
 Hammasi bazada (`Setting.pricing`), `.env`da emas.
 

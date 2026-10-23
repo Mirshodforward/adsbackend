@@ -7,6 +7,12 @@ import type { Env } from '../config/env.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AdminAlertsService } from '../telegram-bot/admin-alerts.service.js';
 
+async function getJson(url: string, headers: Record<string, string> = {}) {
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`);
+  return res.json() as Promise<unknown>;
+}
+
 const PRICING_KEY = 'pricing';
 const RATE_KEY = 'ton_rate';
 /** Bundan eski bozor kursi bilan pul amallari bajarilmaydi (qo'lda kurs bo'lmasa). */
@@ -21,15 +27,20 @@ const RATE_ALERT_AGE_MS = 6 * 3600_000;
 export const pricingSchema = z.object({
   /**
    * Xizmat haqi: mijoz narxi bozor kursidan shuncha foiz yuqori. Mijoz e'longa
-   * 150 000 so'm ajratsa, Telegram'ga 100 000 so'mlik TON ketadi — farq bizniki.
+   * 130 000 so'm ajratsa, Telegram'ga 100 000 so'mlik TON ketadi — farq bizniki.
    */
-  commissionPercent: z.number().min(0).max(300).default(50),
+  commissionPercent: z.number().min(0).max(300).default(30),
   /** Bitta e'longa ajratiladigan eng kam budjet (so'm). */
   minBudgetUzs: z.number().int().positive().max(50_000_000).default(50_000),
   /** Telegram minimal CPM'ini aniq e'lon qilmaydi — xavfsiz pastki chegara (TON). */
   minCpmTon: z.number().positive().default(0.1),
   /** Bo'lsa — bozor kursi o'rniga ishlatiladi (1 TON necha so'm, xizmat haqisiz). */
   manualUzsPerTon: z.number().positive().nullable().default(null),
+  /**
+   * 1 USDT necha so'm (haqiqiy bozor/P2P kursi). `null` — Markaziy bank kursi.
+   * TON narxi USDT'da olinadi, so'mga shu kurs bilan o'tkaziladi.
+   */
+  manualUsdUzs: z.number().positive().nullable().default(12_250),
   /** Balansni to'ldirish: bir martalik summa chegaralari (so'm). */
   topupMinUzs: z.number().int().positive().default(50_000),
   topupMaxUzs: z.number().int().positive().max(100_000_000).default(10_000_000),
@@ -43,6 +54,9 @@ const rateSchema = z.object({
   tonUsd: z.number().positive(),
   usdUzs: z.number().positive(),
   fetchedAt: z.string(),
+  /** Qayerdan olindi — admin panelda ko'rinadi. */
+  tonSource: z.string().optional(),
+  usdSource: z.string().optional(),
 });
 type MarketRate = z.infer<typeof rateSchema>;
 
@@ -57,6 +71,9 @@ export interface Pricing extends PricingSettings {
   /** Mijoz uchun 1000 ko'rishning eng kam narxi (so'm). */
   minCpmUzs: number;
   rateUpdatedAt: string | null;
+  /** Kurs manbalari: `tonapi` | `binance`, `qo'lda` | `cbu`. */
+  tonSource: string | null;
+  usdSource: string | null;
   /** Kurs eskirgan yoki yo'q — yangi pul amallari bajarilmaydi. */
   stale: boolean;
 }
@@ -134,6 +151,8 @@ export class PricingService implements OnApplicationBootstrap {
       usdUzs: rate?.usdUzs ?? null,
       minCpmUzs: Math.ceil(settings.minCpmTon * uzsPerTon),
       rateUpdatedAt: rate?.fetchedAt ?? null,
+      tonSource: rate?.tonSource ?? null,
+      usdSource: rate?.usdSource ?? null,
       stale: !base || !fresh,
     };
   }
@@ -159,32 +178,68 @@ export class PricingService implements OnApplicationBootstrap {
         );
       }
     }
-    const next = pricingSchema.parse({ ...(await this.settings()), ...patch });
+    const current = await this.settings();
+    const next = pricingSchema.parse({ ...current, ...patch });
     await this.save(PRICING_KEY, next);
+    // USD kursi o'zgarsa, TON kursi ham darhol shu bilan qayta hisoblansin.
+    if (next.manualUsdUzs !== current.manualUsdUzs) await this.refreshRate();
     return this.getPricing();
   }
 
+  /** Bozor kursi: TON/USDT (tonapi, zaxira — Binance) × USDT/so'm (qo'lda yoki Markaziy bank). */
   private async fetchMarketRate(): Promise<MarketRate> {
-    const get = async (url: string) => {
-      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-      if (!res.ok) throw new Error(`${new URL(url).host}: HTTP ${res.status}`);
-      return res.json() as Promise<unknown>;
-    };
-    const [ton, cbu] = await Promise.all([
-      get('https://api.binance.com/api/v3/ticker/price?symbol=TONUSDT'),
-      get('https://cbu.uz/uz/arkhiv-kursov-valyut/json/USD/'),
+    const settings = await this.settings();
+    const [ton, usd] = await Promise.all([
+      this.fetchTonUsd(),
+      this.resolveUsdUzs(settings),
     ]);
-    const tonUsd = Number((ton as { price?: string }).price);
-    const usdUzs = Number((cbu as { Rate?: string }[])[0]?.Rate);
-    if (!(tonUsd > 0) || !(usdUzs > 0)) {
-      throw new Error(`kutilmagan javob: TON=${tonUsd}, USD=${usdUzs}`);
-    }
     return {
-      uzsPerTon: Math.round(tonUsd * usdUzs * 100) / 100,
-      tonUsd,
-      usdUzs,
+      uzsPerTon: Math.round(ton.price * usd.rate * 100) / 100,
+      tonUsd: ton.price,
+      usdUzs: usd.rate,
+      tonSource: ton.source,
+      usdSource: usd.source,
       fetchedAt: new Date().toISOString(),
     };
+  }
+
+  private async fetchTonUsd(): Promise<{ price: number; source: string }> {
+    const key = this.config.get('TONAPI_KEY', { infer: true });
+    if (key) {
+      try {
+        const d = (await getJson(
+          'https://tonapi.io/v2/rates?tokens=ton&currencies=usdt',
+          { Authorization: `Bearer ${key}` },
+        )) as { rates?: { TON?: { prices?: { USDT?: number } } } };
+        const price = Number(d.rates?.TON?.prices?.USDT);
+        if (price > 0) return { price, source: 'tonapi' };
+        throw new Error('kutilmagan javob');
+      } catch (e) {
+        this.logger.warn(
+          `tonapi: ${e instanceof Error ? e.message : e} — Binance'ga o'tildi`,
+        );
+      }
+    }
+    const b = (await getJson(
+      'https://api.binance.com/api/v3/ticker/price?symbol=TONUSDT',
+    )) as { price?: string };
+    const price = Number(b.price);
+    if (!(price > 0)) throw new Error(`Binance: kutilmagan javob (${b.price})`);
+    return { price, source: 'binance' };
+  }
+
+  private async resolveUsdUzs(
+    settings: PricingSettings,
+  ): Promise<{ rate: number; source: string }> {
+    if (settings.manualUsdUzs) {
+      return { rate: settings.manualUsdUzs, source: "qo'lda" };
+    }
+    const cbu = (await getJson(
+      'https://cbu.uz/uz/arkhiv-kursov-valyut/json/USD/',
+    )) as { Rate?: string }[];
+    const rate = Number(cbu[0]?.Rate);
+    if (!(rate > 0)) throw new Error('Markaziy bank: kutilmagan javob');
+    return { rate, source: 'cbu' };
   }
 
   private async load<T>(key: string, schema: z.ZodType<T>): Promise<T | null> {

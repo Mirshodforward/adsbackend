@@ -11,6 +11,8 @@ const updateSchema = z
     minBudgetUzs: z.number().int().positive(),
     minCpmTon: z.number().positive(),
     manualUzsPerTon: z.number().positive().nullable(),
+    /** 1 USDT necha so'm; null — Markaziy bank kursi. */
+    manualUsdUzs: z.number().positive().max(100_000).nullable(),
     topupMinUzs: z.number().int().positive(),
     topupMaxUzs: z.number().int().positive(),
     topupFeePercent: z.number().min(0).max(50),
