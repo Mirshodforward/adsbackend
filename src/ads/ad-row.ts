@@ -1,12 +1,13 @@
 import type { Prisma } from '../generated/prisma/client.js';
 import type { Ad as TgAd } from '../telegram-ads/telegram-ads.types.js';
+import { unescapeUnicode } from './emoji/ads-text.js';
 
 /** Telegram Ads javobidagi e'lon → bazadagi `Ad` qatori. */
 export function toAdRow(ad: TgAd) {
   return {
     adId: ad.ad_id,
     title: ad.title,
-    text: ad.text ?? '',
+    text: unescapeUnicode(ad.text ?? ''),
     promoteUrl: ad.promote_url,
     placement: ad.placement,
     status: ad.status,

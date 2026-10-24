@@ -11,6 +11,7 @@ import {
 import { TopupsService } from '../payments/topups.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PricingService } from '../settings/pricing.service.js';
+import { AdminAlertsService } from '../telegram-bot/admin-alerts.service.js';
 import { TelegramBotService } from '../telegram-bot/telegram-bot.service.js';
 import { adMoney, CLIENT_AD_FIELDS } from './ad-money.js';
 
@@ -56,6 +57,7 @@ export class AdminService {
     private readonly sync: AdsSyncService,
     private readonly topups: TopupsService,
     private readonly bot: TelegramBotService,
+    private readonly alerts: AdminAlertsService,
   ) {}
 
   /** Bosh sahifa: platforma holati bir qarashda. */
@@ -333,7 +335,8 @@ export class AdminService {
     amountUzs: number,
     note: string,
   ) {
-    if (adminId === userId) fail("O'z balansingizni o'zingiz tuzata olmaysiz");
+    // O'z hisobini tuzatish mumkin (sinov, bonus) — lekin barcha adminlarga xabar boradi.
+    const self = adminId === userId;
     const [admin, user] = await Promise.all([
       this.db.user.findUniqueOrThrow({
         where: { id: adminId },
@@ -349,10 +352,15 @@ export class AdminService {
     const result = await this.balance.adjust(
       userId,
       amountUzs,
-      `${note} — admin ${admin.firstName}`,
+      `${note} — admin ${admin.firstName}${self ? " (o'z hisobi)" : ''}`,
     );
     if (!result.ok) {
       fail("Mijozning bo'sh balansi bundan kam — yechib bo'lmaydi", 409);
+    }
+    if (self) {
+      void this.alerts.send(
+        `⚠️ Admin ${admin.firstName} o'z balansini tuzatdi: ${amountUzs > 0 ? '+' : '−'}${fmt(Math.abs(amountUzs))} so'm — ${note}`,
+      );
     }
     void this.bot.sendMessage(
       user.telegramId,

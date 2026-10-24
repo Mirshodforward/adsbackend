@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { stripAdsText } from './emoji/ads-text.js';
 import type { Env } from '../config/env.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TelegramAdsClient } from '../telegram-ads/telegram-ads.client.js';
@@ -206,7 +207,7 @@ export class AdsSyncService implements OnApplicationBootstrap {
 
   /** Mijozga: e'lon moderatsiyadan o'tdi, rad etildi yoki budjeti tugadi. */
   private async notifyOwner({ ad, chatId }: StatusChange) {
-    const name = `«${(ad.text || ad.title).replace(/\s+/g, ' ').slice(0, 60)}»`;
+    const name = `«${(stripAdsText(ad.text) || ad.title).replace(/\s+/g, ' ').slice(0, 60)}»`;
     const url = `${this.config.get('FRONTEND_URL', { infer: true })}/dashboard/ads/${ad.ad_id}`;
     const text =
       ad.status === 'active'

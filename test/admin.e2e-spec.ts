@@ -284,11 +284,17 @@ describe('Admin paneli (e2e)', () => {
     const funding = await api(admin.token).get('/api/admin/funding').expect(200);
     expect(funding.body.operations).toEqual(expect.any(Array));
   });
-  it("admin o'z balansini tuzata olmaydi; qo'lda kurs bozor kursidan 2 barobar farq qilsa — 400", async () => {
-    await api(admin.token)
+  it("admin o'z balansini tuzata oladi (jurnal + ogohlantirish); qo'lda kurs bozor kursidan 2 barobar farq qilsa — 400", async () => {
+    const selfAdjust = await api(admin.token)
       .post(`/api/admin/users/${admin.id}/adjust`)
       .send({ amountUzs: 10_000, note: "O'zimga" })
-      .expect(400);
+      .expect(200);
+    expect(Number(selfAdjust.body.balanceUzs)).toBeGreaterThanOrEqual(10_000);
+    const journal = await db.balanceEntry.findFirst({
+      where: { userId: admin.id, type: 'ADJUSTMENT' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(journal?.note).toContain("o'z hisobi");
 
     const hadRate = !!(await db.setting.findUnique({ where: { key: 'ton_rate' } }));
     if (!hadRate) {

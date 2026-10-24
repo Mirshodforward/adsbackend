@@ -489,4 +489,35 @@ describe("Mijoz e'lonlari va balans (e2e)", () => {
     const ad = await api(owner.token).get(`/api/ads/${id}`).expect(200);
     expect(ad.body).toMatchObject({ refundedUzs: '40000', heldUzs: '0' });
   });
+  it("premium emoji va avatar: matn Ads formatida ketadi, minimal narx +80%", async () => {
+    const star = { offset: 0, length: 1, id: '5190768311394130762' };
+    // Oddiy minimal narx (0.1 TON = 2 000 so'm) emoji+avatar bilan kam — 400, pul yechilmaydi.
+    const before = await freeBalance();
+    const cheap = await api(owner.token)
+      .post('/api/ads')
+      .send({ ...adInput, text: '⭐ Matn', emoji: [star], showUserpic: true, cpmUzs: 2_000 })
+      .expect(400);
+    expect(cheap.body.error).toMatch(/premium emoji va avatar/);
+    expect(await freeBalance()).toBe(before);
+
+    const res = await api(owner.token)
+      .post('/api/ads')
+      .send({ ...adInput, text: '⭐ Matn', emoji: [star], showUserpic: true, cpmUzs: 3_600 })
+      .expect(201);
+    const call = fakeAds.createAd.mock.calls.at(-1)![0] as unknown as {
+      text: string;
+      show_userpic?: boolean;
+      cpm: number;
+    };
+    expect(call.text).toBe('![⭐](tg://emoji?id=5190768311394130762) Matn');
+    expect(call.show_userpic).toBe(true);
+    expect(call.cpm).toBe(0.18);
+    // Katalog va eskiz endpointlari mavjud (eskiz — tarmoqsiz muhitda 404).
+    const catalog = await api(owner.token).get('/api/ads/emoji').expect(200);
+    expect(catalog.body.items.length).toBeGreaterThan(50);
+    expect(catalog.body.items[0]).toMatchObject({ ch: expect.any(String), id: expect.any(String) });
+    await api(owner.token).get('/api/ads/emoji/abc/thumb').expect(404);
+    // Tozalash: e'lonni yopamiz — qoldiq balansga qaytadi (keyingi testlar balansga tayanadi).
+    await api(owner.token).post(`/api/ads/${res.body.adId}/close`).expect(200);
+  });
 });

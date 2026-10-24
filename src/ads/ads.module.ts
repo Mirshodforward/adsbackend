@@ -8,6 +8,8 @@ import { AdsOptionsService } from './client/ads-options.service.js';
 import { ClientAdsController } from './client/client-ads.controller.js';
 import { ClientAdsService } from './client/client-ads.service.js';
 import { FundingService } from './client/funding.service.js';
+import { EmojiController } from './emoji/emoji.controller.js';
+import { EmojiService } from './emoji/emoji.service.js';
 
 /** Mijoz e'lonlari va Telegram Ads bilan sinxronlash. Admin boshqaruvi — `src/admin`. */
 @Module({
@@ -17,12 +19,14 @@ import { FundingService } from './client/funding.service.js';
     BalanceModule,
     SettingsModule,
   ],
-  controllers: [ClientAdsController],
+  // Tartib muhim: `/ads/emoji` `/ads/:adId` dan oldin ro'yxatdan o'tsin.
+  controllers: [EmojiController, ClientAdsController],
   providers: [
     AdsSyncService,
     ClientAdsService,
     FundingService,
     AdsOptionsService,
+    EmojiService,
   ],
   exports: [AdsSyncService, ClientAdsService, FundingService, AdsOptionsService],
 })

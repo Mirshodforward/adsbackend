@@ -21,6 +21,9 @@ const pricing: Pricing = {
   minCpmUzs: 2_000,
   rateUpdatedAt: '2026-10-13T00:00:00Z',
   stale: false,
+  tonSource: 'tonapi',
+  usdSource: 'manual',
+  manualUsdUzs: 12_250,
 };
 
 const input: ClientAdInput = {
@@ -212,5 +215,74 @@ describe('buildAdRequest', () => {
       target: { type: 'search', search_queries: ['uc narxi', 'pubg uc'] },
     });
     expect(r.ok && r.request.text).toBeUndefined();
+  });
+});
+
+describe('buildAdRequest — premium emoji va avatar', () => {
+  const star = { offset: 0, length: 1, id: '5190768311394130762' };
+
+  it("matnni Telegram Ads formatiga kodlaydi va minimal narxni +50% qiladi", () => {
+    const emojiInput: ClientAdInput = {
+      ...input,
+      text: "⭐ 11 900 so'mga 60 UC!",
+      emoji: [star],
+      cpmUzs: 2_000, // minimal (0.1 TON) — emoji bilan kam
+    };
+    const tooCheap = buildAdRequest(emojiInput, pricing, 10000001);
+    expect(tooCheap.ok).toBe(false);
+    if (!tooCheap.ok) expect(tooCheap.error).toMatch(/premium emoji/);
+
+    const built = buildAdRequest({ ...emojiInput, cpmUzs: 3_000 }, pricing, 10000001);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.request.text).toBe(
+      "![⭐](tg://emoji?id=5190768311394130762) 11 900 so'mga 60 UC!",
+    );
+    // Sarlavha oddiy matndan — markup'siz.
+    expect(built.request.title).toContain("⭐ 11 900 so'mga 60 UC!");
+    expect(built.request.show_userpic).toBeUndefined();
+  });
+
+  it("boshidagi bo'sh joy offsetlarni buzmaydi (controller trim qilmaydi)", () => {
+    const built = buildAdRequest(
+      { ...input, text: '  ⭐ Salom', emoji: [{ offset: 2, length: 1, id: '123456' }], cpmUzs: 3_000 },
+      pricing,
+      1,
+    );
+    expect(built.ok).toBe(true);
+    if (built.ok) expect(built.request.text).toBe('![⭐](tg://emoji?id=123456) Salom');
+  });
+
+  it("kodlangan matn 160 dan oshsa — tushunarli xato", () => {
+    const text = 'Sinov matni '.repeat(10).trim() + ' ⭐⭐⭐';
+    const base = text.length - 3;
+    const built = buildAdRequest(
+      {
+        ...input,
+        text,
+        emoji: [0, 1, 2].map((i) => ({ offset: base + i, length: 1, id: '5190768311394130762' })),
+        cpmUzs: 4_000,
+      },
+      pricing,
+      1,
+    );
+    expect(built.ok).toBe(false);
+    if (!built.ok) expect(built.error).toMatch(/160 belgidan oshdi/);
+  });
+
+  it("avatar faqat Telegram havolasida va +30% minimal narx", () => {
+    const site = buildAdRequest(
+      { ...input, promoteUrl: 'https://shop.uz', websiteName: 'Shop', showUserpic: true, cpmUzs: 2_000 },
+      pricing,
+      1,
+    );
+    expect(site.ok).toBe(true);
+    if (site.ok) expect(site.request.show_userpic).toBeUndefined();
+
+    const cheap = buildAdRequest({ ...input, showUserpic: true, cpmUzs: 2_000 }, pricing, 1);
+    expect(cheap.ok).toBe(false);
+    const ok = buildAdRequest({ ...input, showUserpic: true, cpmUzs: 2_600 }, pricing, 1);
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(ok.request.show_userpic).toBe(true);
   });
 });

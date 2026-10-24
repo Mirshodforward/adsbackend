@@ -1,4 +1,10 @@
 import type { Pricing } from '../../settings/pricing.service.js';
+import {
+  AdsTextError,
+  cpmFactor,
+  encodeAdsText,
+  type EmojiEntity,
+} from '../emoji/ads-text.js';
 import type {
   AdButton,
   AdPlacement,
@@ -14,6 +20,10 @@ export interface ClientAdInput {
     'channel_post' | 'bot_banner' | 'search_result'
   >;
   text: string;
+  /** Premium emoji entitylari — offsetlar `text` bo'yicha (trimdan oldin). */
+  emoji?: EmojiEntity[];
+  /** Kanal/bot avatarini ko'rsatish (Telegram havolasi uchun). */
+  showUserpic?: boolean;
   websiteName?: string;
   button?: AdButton;
   target:
@@ -49,6 +59,9 @@ export const PLACEMENT_TARGETS: Record<ClientAdInput['placement'], string[]> = {
   bot_banner: ['users', 'bots'],
   search_result: ['search'],
 };
+
+/** Telegram Ads `text` chegarasi — kodlangan (markup bilan) uzunlik. */
+export const MAX_ADS_TEXT = 160;
 
 const floor2 = (n: number) => Math.floor(n * 100 + 1e-9) / 100;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -132,14 +145,49 @@ export function buildAdRequest(
   if (input.placement !== 'search_result' && !text) {
     return fail('Reklama matnini kiriting');
   }
+  // Premium emoji: Telegram Ads formatiga kodlaymiz. 160 belgi chegarasi
+  // KODLANGAN matnga tegishli (jonli tekshiruv: POST_MESSAGE_TOO_LONG) —
+  // har emoji ~40 belgi oladi.
+  let adsText = text;
+  if (input.emoji?.length) {
+    const lead = input.text.length - input.text.trimStart().length;
+    const entities = input.emoji.map((e) => ({ ...e, offset: e.offset - lead }));
+    try {
+      adsText = encodeAdsText(text, entities);
+    } catch (e) {
+      return fail(
+        e instanceof AdsTextError && e.code === 'TOO_MANY'
+          ? "Premium emoji ko'pi bilan 10 ta"
+          : "Premium emoji joylashuvi noto'g'ri — matnni qayta kiriting",
+      );
+    }
+    if (adsText.length > MAX_ADS_TEXT) {
+      return fail(
+        `Matn premium emoji bilan birga ${MAX_ADS_TEXT} belgidan oshdi (${adsText.length}). Har premium emoji ~40 belgi oladi — matnni qisqartiring yoki emoji sonini kamaytiring`,
+      );
+    }
+  }
 
   if (input.budgetUzs < pricing.minBudgetUzs) {
     return fail(`Minimal budjet — ${formatUzs(pricing.minBudgetUzs)} so'm`);
   }
   const cpm = round2(input.cpmUzs / pricing.uzsPerTon);
-  if (cpm < pricing.minCpmTon) {
+  // Premium emoji (+50%) va avatar (+30%) Telegram'da minimal narxni oshiradi
+  // (jonli o'lchov: 0.10 → 0.15 / 0.13 / 0.18 TON). Oldindan tekshiramiz —
+  // aks holda pul ajratilib, Telegram CPM_TOO_SMALL qaytaradi.
+  const hasEmoji = Boolean(input.emoji?.length);
+  const userpic = Boolean(input.showUserpic && link.telegram);
+  const minCpmTon = round2(pricing.minCpmTon * cpmFactor({ emoji: hasEmoji, userpic }));
+  if (cpm < minCpmTon) {
+    const reason = hasEmoji && userpic
+      ? ' (premium emoji va avatar bilan)'
+      : hasEmoji
+        ? ' (premium emoji bilan)'
+        : userpic
+          ? ' (avatar bilan)'
+          : '';
     return fail(
-      `1000 ko'rish narxi kamida ${formatUzs(pricing.minCpmTon * pricing.uzsPerTon)} so'm bo'lishi kerak`,
+      `1000 ko'rish narxi kamida ${formatUzs(minCpmTon * pricing.uzsPerTon)} so'm bo'lishi kerak${reason}`,
     );
   }
   const amountTon = floor2(input.budgetUzs / pricing.uzsPerTon);
@@ -200,7 +248,8 @@ export function buildAdRequest(
     amountTon,
     request: {
       title: title(clientId, text || input.promoteUrl),
-      ...(text && { text }),
+      ...(adsText && { text: adsText }),
+      ...(input.showUserpic && link.telegram && { show_userpic: true }),
       promote_url: link.url,
       cpm,
       placement: input.placement,

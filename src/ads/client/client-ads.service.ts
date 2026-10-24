@@ -8,6 +8,7 @@ import {
   TelegramAdsError,
 } from '../../telegram-ads/telegram-ads.client.js';
 import { toAdRow } from '../ad-row.js';
+import { CPM_EXTRA } from '../emoji/ads-text.js';
 import {
   buildAdRequest,
   formatUzs,
@@ -71,6 +72,8 @@ export class ClientAdsService {
         stale: pricing.stale,
       },
       recommendedCpmUzs,
+      // Premium emoji va avatar minimal narxni oshiradi — kabinet oldindan ko'rsatadi.
+      cpmExtras: CPM_EXTRA,
       balanceUzs: user.balanceUzs,
     };
   }

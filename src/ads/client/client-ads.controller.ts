@@ -21,7 +21,21 @@ const username = z.string().trim().min(4).max(64);
 const createSchema = z.object({
   promoteUrl: z.string().trim().min(1).max(300),
   placement: z.enum(['channel_post', 'bot_banner', 'search_result']),
-  text: z.string().trim().max(160).default(''),
+  // Trim qilinmaydi: `emoji` offsetlari aynan shu matnga tegishli (ad-request trim qiladi).
+  text: z.string().max(160).default(''),
+  /** Premium emoji: matndagi o'rni (UTF-16) va Telegram custom_emoji_id. */
+  emoji: z
+    .array(
+      z.object({
+        offset: z.number().int().min(0).max(160),
+        length: z.number().int().min(1).max(8),
+        id: z.string().regex(/^\d{5,40}$/),
+      }),
+    )
+    .max(10)
+    .optional(),
+  /** Kanal/bot avatarini e'londa ko'rsatish (faqat Telegram havolasi uchun). */
+  showUserpic: z.boolean().optional(),
   websiteName: z.string().trim().min(1).max(40).optional(),
   button: z
     .enum([
