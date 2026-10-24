@@ -253,7 +253,7 @@ describe('buildAdRequest — premium emoji va avatar', () => {
     if (built.ok) expect(built.request.text).toBe('![⭐](tg://emoji?id=123456) Salom');
   });
 
-  it("kodlangan matn 160 dan oshsa — tushunarli xato", () => {
+  it("3 emoji + 120 belgi — ruxsat (ko'rinadigan ≤160, xom ≤255)", () => {
     const text = 'Sinov matni '.repeat(10).trim() + ' ⭐⭐⭐';
     const base = text.length - 3;
     const built = buildAdRequest(
@@ -266,8 +266,31 @@ describe('buildAdRequest — premium emoji va avatar', () => {
       pricing,
       1,
     );
-    expect(built.ok).toBe(false);
-    if (!built.ok) expect(built.error).toMatch(/160 belgidan oshdi/);
+    expect(built.ok).toBe(true);
+    if (built.ok) expect(built.request.text!.length).toBeLessThanOrEqual(255);
+  });
+
+  it("xom matn 255 dan oshsa (7 emoji) — tushunarli xato; ko'rinadigan 160 dan oshsa — xato", () => {
+    const text = '⭐'.repeat(7) + ' Sinov';
+    const seven = buildAdRequest(
+      {
+        ...input,
+        text,
+        emoji: Array.from({ length: 7 }, (_, i) => ({ offset: i, length: 1, id: '5190768311394130762' })),
+        cpmUzs: 4_000,
+      },
+      pricing,
+      1,
+    );
+    expect(seven.ok).toBe(false);
+    if (!seven.ok) expect(seven.error).toMatch(/255 belgidan oshdi/);
+
+    // 🔥 UTF-16 da 2 birlik: 100 ta = 200 birlik, lekin 100 kod nuqtasi — ruxsat.
+    const fires = buildAdRequest({ ...input, text: '🔥'.repeat(100) + ' ok', cpmUzs: 4_000 }, pricing, 1);
+    expect(fires.ok).toBe(true);
+    const long = buildAdRequest({ ...input, text: 'a'.repeat(161), cpmUzs: 4_000 }, pricing, 1);
+    expect(long.ok).toBe(false);
+    if (!long.ok) expect(long.error).toMatch(/160 belgidan oshmasin/);
   });
 
   it("avatar faqat Telegram havolasida va +30% minimal narx", () => {

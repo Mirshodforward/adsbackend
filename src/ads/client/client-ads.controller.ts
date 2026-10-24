@@ -22,12 +22,13 @@ const createSchema = z.object({
   promoteUrl: z.string().trim().min(1).max(300),
   placement: z.enum(['channel_post', 'bot_banner', 'search_result']),
   // Trim qilinmaydi: `emoji` offsetlari aynan shu matnga tegishli (ad-request trim qiladi).
-  text: z.string().max(160).default(''),
+  // 160 belgi kod nuqtalari bo'yicha ad-request'da tekshiriladi (zod UTF-16 sanaydi).
+  text: z.string().max(320).default(''),
   /** Premium emoji: matndagi o'rni (UTF-16) va Telegram custom_emoji_id. */
   emoji: z
     .array(
       z.object({
-        offset: z.number().int().min(0).max(160),
+        offset: z.number().int().min(0).max(320),
         length: z.number().int().min(1).max(8),
         id: z.string().regex(/^\d{5,40}$/),
       }),

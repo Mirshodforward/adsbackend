@@ -38,6 +38,16 @@ export class AdsTextError extends Error {
 
 export const MAX_CUSTOM_EMOJI = 10;
 
+/**
+ * Telegram Ads chegaralari (jonli o'lchov, 2026-10-24): ko'rinadigan matn —
+ * 160 belgi (kod nuqtalari, 🔥 = 1); xom matn (markup bilan) — 255 belgi.
+ */
+export const MAX_VISIBLE_TEXT = 160;
+export const MAX_RAW_TEXT = 255;
+
+/** Kod nuqtalari soni (Telegram shunday sanaydi, UTF-16 birliklari emas). */
+export const codePoints = (s: string) => Array.from(s).length;
+
 /** Oddiy matn + entitylar → Telegram Ads formati. Xato bo'lsa `AdsTextError`. */
 export function encodeAdsText(text: string, entities: EmojiEntity[] = []): string {
   if (!entities.length) return text;

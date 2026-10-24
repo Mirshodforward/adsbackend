@@ -1,8 +1,11 @@
 import type { Pricing } from '../../settings/pricing.service.js';
 import {
   AdsTextError,
+  codePoints,
   cpmFactor,
   encodeAdsText,
+  MAX_RAW_TEXT,
+  MAX_VISIBLE_TEXT,
   type EmojiEntity,
 } from '../emoji/ads-text.js';
 import type {
@@ -59,9 +62,6 @@ export const PLACEMENT_TARGETS: Record<ClientAdInput['placement'], string[]> = {
   bot_banner: ['users', 'bots'],
   search_result: ['search'],
 };
-
-/** Telegram Ads `text` chegarasi — kodlangan (markup bilan) uzunlik. */
-export const MAX_ADS_TEXT = 160;
 
 const floor2 = (n: number) => Math.floor(n * 100 + 1e-9) / 100;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -145,9 +145,13 @@ export function buildAdRequest(
   if (input.placement !== 'search_result' && !text) {
     return fail('Reklama matnini kiriting');
   }
-  // Premium emoji: Telegram Ads formatiga kodlaymiz. 160 belgi chegarasi
-  // KODLANGAN matnga tegishli (jonli tekshiruv: POST_MESSAGE_TOO_LONG) —
-  // har emoji ~40 belgi oladi.
+  // Ko'rinadigan matn — 160 belgi (kod nuqtalari); zod UTF-16 bo'yicha sanaydi,
+  // shuning uchun emoji ko'p matnda bu yerda qayta tekshiramiz.
+  if (codePoints(text) > MAX_VISIBLE_TEXT) {
+    return fail(`Reklama matni ${MAX_VISIBLE_TEXT} belgidan oshmasin (hozir ${codePoints(text)})`);
+  }
+  // Premium emoji: Telegram Ads formatiga kodlaymiz. Xom matn (markup bilan)
+  // 255 belgidan oshmasin — jonli tekshiruv: POST_MESSAGE_TOO_LONG.
   let adsText = text;
   if (input.emoji?.length) {
     const lead = input.text.length - input.text.trimStart().length;
@@ -161,9 +165,9 @@ export function buildAdRequest(
           : "Premium emoji joylashuvi noto'g'ri — matnni qayta kiriting",
       );
     }
-    if (adsText.length > MAX_ADS_TEXT) {
+    if (adsText.length > MAX_RAW_TEXT) {
       return fail(
-        `Matn premium emoji bilan birga ${MAX_ADS_TEXT} belgidan oshdi (${adsText.length}). Har premium emoji ~40 belgi oladi — matnni qisqartiring yoki emoji sonini kamaytiring`,
+        `Premium emoji ko'p: matn markup bilan ${MAX_RAW_TEXT} belgidan oshdi (${adsText.length}). Har premium emoji ~40 belgi oladi — emoji sonini kamaytiring yoki matnni qisqartiring`,
       );
     }
   }
