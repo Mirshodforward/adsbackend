@@ -16,7 +16,10 @@ export interface GatewayMethod {
 
 /** Tartib — mijoz ekranidagi tartib. */
 export const GATEWAY_METHODS: readonly GatewayMethod[] = [
-  { code: 'CLICK', label: 'Click', provider: 'CLICK', appOnly: false },
+  // Click shartnomasi (service 107474, StarsPaymee bilan umumiy) faqat Click ilovasida
+  // to'lanadi: my.click.uz veb-checkout "Оплата за данного поставщика временно недоступна"
+  // deydi (2026-11-02 tekshirildi). Telefonda havola ilovani ochadi, kompyuterda — QR.
+  { code: 'CLICK', label: 'Click', provider: 'CLICK', appOnly: true },
   { code: 'PAYME', label: 'Payme', provider: 'PAYME', appOnly: false },
   // `UZUM_MERCHANT` — Uzum Bank ilovasi (deeplink, raqam oldindan to'ldirilgan).
   // `UZUM` (Uzum Checkout) boshqa mahsulot, uni ishlatmaymiz.
