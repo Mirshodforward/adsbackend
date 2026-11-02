@@ -46,6 +46,7 @@ model User {
   clientAds         ClientAd[]
   fundingOperations FundingOperation[]
   topups            Topup[]
+  shopOrders        ShopOrder[]
 }
 
 /// Refresh token sessiyasi. Tokenning o'zi saqlanmaydi — faqat SHA-256 xeshi.
@@ -125,6 +126,8 @@ enum BalanceEntryType {
   AD_FUNDING // e'lon budjetiga ajratildi (−)
   AD_REFUND // e'londan ishlatilmagan qoldiq qaytdi (+)
   ADJUSTMENT // admin tuzatishi (±)
+  SHOP_PURCHASE // Stars / Premium / sovg'a xaridi (−)
+  SHOP_REFUND // yetkazilmagan xarid puli qaytdi (+)
 }
 
 /// Bo'sh balans harakatlari jurnali — faqat qo'shiladi, o'zgartirilmaydi.
@@ -265,4 +268,57 @@ model Topup {
   @@index([userId, createdAt])
   @@index([status, expiresAt])
   @@index([method, status, payUzs])
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DO'KON — Telegram Stars, Premium va sovg'alar (StarsPaymee Partner API)
+// ═══════════════════════════════════════════════════════════════
+
+enum ShopProduct {
+  STARS
+  PREMIUM
+  GIFT
+}
+
+enum ShopOrderStatus {
+  PROCESSING // pul yechildi, yetkazilmoqda
+  COMPLETED // yetkazildi
+  FAILED // yetkazilmadi — pul balansga qaytdi
+}
+
+/// Mijoz balansidan (so'm) to'lanadigan xarid. Yetkazish — StarsPaymee Partner
+/// API (Fragment / sovg'a ombori), hamkor balansi USDT'da. `id` hamkorga
+/// `idempotency_key` bo'lib ketadi: takroriy so'rov ikkinchi marta yetkazmaydi.
+model ShopOrder {
+  id             String          @id @default(cuid())
+  userId         String
+  product        ShopProduct
+  /// Qabul qiluvchi @username (belgisiz).
+  recipient      String
+  recipientName  String?
+  /// STARS — soni, PREMIUM — oy, GIFT — 1.
+  quantity       Int
+  giftId         String?
+  giftEmoji      String?
+  giftStars      Int?
+  message        String?
+  hideName       Boolean         @default(false)
+  priceUzs       Decimal         @db.Decimal(14, 2)
+  /// Hamkor narxi (USDT): buyurtmada — taxmin, yetkazilgach — haqiqiy yechilgani.
+  costUsdt       Decimal?        @db.Decimal(18, 6)
+  status         ShopOrderStatus @default(PROCESSING)
+  partnerOrderId Int?
+  transactionId  String?
+  error          String?
+  attempts       Int             @default(0)
+  /// Oxirgi yetkazish urinishi boshlangan vaqt — bir vaqtda ikki urinish bo'lmasin.
+  attemptedAt    DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([status, attemptedAt])
 }
