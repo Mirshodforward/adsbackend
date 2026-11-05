@@ -4,7 +4,6 @@ import { Public } from '../common/decorators.js';
 import { GATEWAY_METHODS } from '../payments/methods.js';
 import { TopupsService } from '../payments/topups.service.js';
 import { PricingService } from '../settings/pricing.service.js';
-import { ShopService } from '../shop/shop.service.js';
 
 /**
  * Sayt (bosh sahifa, blog) uchun ochiq narxlar — faqat mijoz ko'radigan so'mdagi
@@ -20,7 +19,6 @@ export class PublicController {
     private readonly pricing: PricingService,
     private readonly options: AdsOptionsService,
     private readonly topups: TopupsService,
-    private readonly shop: ShopService,
   ) {}
 
   @Get('pricing')
@@ -43,11 +41,5 @@ export class PublicController {
       stale: pricing.stale,
       updatedAt: pricing.rateUpdatedAt,
     };
-  }
-
-  /** Do'kon (Stars, Premium, sovg'alar) — "…dan" narxlar. O'chiq bo'lsa `null`. */
-  @Get('shop')
-  shopPrices() {
-    return this.shop.publicPrices();
   }
 }

@@ -81,17 +81,6 @@ const envSchema = z
       .union([z.literal(''), z.string().regex(/^\d+$/, 'faqat raqam')])
       .optional()
       .transform((v) => v || undefined),
-    // ─── Do'kon: Telegram Stars, Premium, sovg'alar ─────────────────────
-    // StarsPaymee Partner Purchase API (api.starstg.uz/api/purchase/v1/docs).
-    // Kalit bo'sh bo'lsa do'kon o'chiq: sahifada "vaqtincha ishlamayapti".
-    STARSPAYMEE_API_URL: z.url().default('https://api.starstg.uz/api/purchase'),
-    STARSPAYMEE_API_KEY: z
-      .string()
-      .optional()
-      .transform((v) => v || undefined),
-    // Sinov: Stars/Premium `/test/v1` ga ketadi (pul yechilmaydi, yetkazilmaydi).
-    // FAQAT lokal ishlash uchun — productionda ruxsat etilmaydi (pastda).
-    STARSPAYMEE_SANDBOX: z.stringbool().default(false),
     // Yoqilgan usullar (vergul bilan): CLICK, PAYME, UZUM, PAYNET.
     // Summa chegaralari va komissiya — admin panelidagi sozlamalarda (bazada).
     PAYMENT_METHODS: z
@@ -108,11 +97,6 @@ const envSchema = z
   .refine((env) => env.NODE_ENV !== 'production' || env.INTERNAL_API_SECRET, {
     path: ['INTERNAL_API_SECRET'],
     message: 'productionda majburiy',
-  })
-  // Sandbox'da mijoz puli yechiladi, lekin hech narsa yetkazilmaydi — productionda xavfli.
-  .refine((env) => env.NODE_ENV !== 'production' || !env.STARSPAYMEE_SANDBOX, {
-    path: ['STARSPAYMEE_SANDBOX'],
-    message: 'productionda yoqib bo\'lmaydi',
   });
 
 export type Env = z.infer<typeof envSchema>;

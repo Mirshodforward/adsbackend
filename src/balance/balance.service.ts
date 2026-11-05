@@ -13,10 +13,6 @@ export interface CreditOptions {
   note?: string;
 }
 
-/** `BalanceEntry.source` — do'kon xaridi va uning qaytarilishi (externalId = ShopOrder.id). */
-export const SHOP_SOURCE = 'SHOP';
-export const SHOP_REFUND_SOURCE = 'SHOP_REFUND';
-
 function toAmount(value: Amount): Prisma.Decimal {
   const amount = new Prisma.Decimal(value);
   if (amount.lte(0) || amount.decimalPlaces() > 2) {
@@ -153,70 +149,6 @@ export class BalanceService {
       data: { balanceUzs: { increment: amount } },
     });
     await this.writeEntry(tx, userId, 'AD_REFUND', amount, ref);
-  }
-
-  /**
-   * Do'kon xaridi (Stars / Premium / sovg'a) — tashqi tranzaksiya ichida.
-   * Pul yetmasa — `false` (shartli UPDATE). Jurnalda (SHOP, buyurtma id) yagona.
-   */
-  async debitForShop(
-    tx: Tx,
-    userId: string,
-    amountUzs: Amount,
-    ref: { orderId: string; note?: string },
-  ): Promise<boolean> {
-    const amount = toAmount(amountUzs);
-    const debited = await tx.user.updateMany({
-      where: { id: userId, balanceUzs: { gte: amount } },
-      data: { balanceUzs: { decrement: amount } },
-    });
-    if (debited.count === 0) return false;
-    const { balanceUzs } = await tx.user.findUniqueOrThrow({
-      where: { id: userId },
-      select: { balanceUzs: true },
-    });
-    await tx.balanceEntry.create({
-      data: {
-        userId,
-        type: 'SHOP_PURCHASE',
-        amountUzs: amount.negated(),
-        balanceAfterUzs: balanceUzs,
-        source: SHOP_SOURCE,
-        externalId: ref.orderId,
-        note: ref.note,
-      },
-    });
-    return true;
-  }
-
-  /**
-   * Yetkazilmagan xarid puli qaytadi — tashqi tranzaksiya ichida. Bitta buyurtma
-   * uchun FAQAT BIR MARTA: (SHOP_REFUND, buyurtma id) yagona, ikkinchisi
-   * tranzaksiyani yiqitadi (chaqiruvchi holatni shartli o'zgartirib himoyalaydi).
-   */
-  async refundShop(
-    tx: Tx,
-    userId: string,
-    amountUzs: Amount,
-    ref: { orderId: string; note?: string },
-  ): Promise<void> {
-    const amount = toAmount(amountUzs);
-    const { balanceUzs } = await tx.user.update({
-      where: { id: userId },
-      data: { balanceUzs: { increment: amount } },
-      select: { balanceUzs: true },
-    });
-    await tx.balanceEntry.create({
-      data: {
-        userId,
-        type: 'SHOP_REFUND',
-        amountUzs: amount,
-        balanceAfterUzs: balanceUzs,
-        source: SHOP_REFUND_SOURCE,
-        externalId: ref.orderId,
-        note: ref.note,
-      },
-    });
   }
 
   private async writeEntry(
