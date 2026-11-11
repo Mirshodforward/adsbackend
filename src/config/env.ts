@@ -57,6 +57,14 @@ const envSchema = z
       ),
     // Bot xabaridagi havolalar uchun.
     FRONTEND_URL: z.url().default('https://osontarget.uz'),
+    // Botning webhook manzili (https://api.osontarget.uz/api/telegram/webhook).
+    // Berilsa, ishga tushishda webhook va buyruqlar ro'yxati o'rnatiladi.
+    // Faqat serverda: lokal ishlash va testlar prod botining webhook'ini
+    // o'zgartirib yubormasin. Bo'sh bo'lsa bot kelgan xabarlarni olmaydi.
+    TELEGRAM_WEBHOOK_URL: z
+      .union([z.literal(''), z.url()])
+      .optional()
+      .transform((v) => v || undefined),
     // TON/USDT narxi uchun tonapi.io kaliti. Bo'sh bo'lsa yoki yiqilsa — Binance.
     TONAPI_KEY: z
       .string()

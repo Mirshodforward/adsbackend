@@ -73,7 +73,12 @@ export class TelegramBotService {
   }
 
   /** Yiqilsa faqat log yoziladi: bildirishnoma asosiy ishni to'xtatmasin. */
-  async sendMessage(chatId: bigint | string, text: string): Promise<boolean> {
+  async sendMessage(
+    chatId: bigint | number | string,
+    text: string,
+    /** Qo'shimcha parametrlar: `parse_mode`, `reply_markup` va hokazo. */
+    extra: object = {},
+  ): Promise<boolean> {
     const token = this.config.get('TELEGRAM_BOT_TOKEN', { infer: true });
     try {
       const res = await fetch(
@@ -85,6 +90,7 @@ export class TelegramBotService {
             chat_id: chatId.toString(),
             text,
             link_preview_options: { is_disabled: true },
+            ...extra,
           }),
           signal: AbortSignal.timeout(10_000),
         },

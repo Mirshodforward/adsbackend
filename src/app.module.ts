@@ -15,6 +15,7 @@ import { PaymentsModule } from './payments/payments.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { PublicModule } from './public/public.module.js';
 import { TelegramAdsModule } from './telegram-ads/telegram-ads.module.js';
+import { TelegramBotModule } from './telegram-bot/telegram-bot.module.js';
 
 @Module({
   imports: [
@@ -39,6 +40,8 @@ import { TelegramAdsModule } from './telegram-ads/telegram-ads.module.js';
     PaymentsModule,
     AdminModule,
     PublicModule,
+    // Bot webhook'i (/api/telegram/webhook) — boshqa modullar ham import qiladi.
+    TelegramBotModule,
   ],
   controllers: [HealthController],
   // Tartib muhim: avval "so'rov BFF'danmi", keyin "foydalanuvchi kim".
