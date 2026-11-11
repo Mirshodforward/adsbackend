@@ -3,7 +3,7 @@
  * va bot profili. Sof funksiyalar — tarmoq va bazasiz testlanadi.
  *
  * Bot faqat "eshik": hamma ish kabinetda (Mini App `/app`), u Telegram
- * `initData` orqali parolsiz kiritadi va kerakli sahifaga (`next`) o'tkazadi.
+ * `initData` orqali parolsiz kiritadi.
  */
 
 export const BOT_LANGS = ['uz', 'ru', 'en'] as const;
@@ -48,14 +48,11 @@ const T = {
     clientId: '🆔 Mijoz raqami',
     ctaNew:
       '👇 «Kabinetni ochish»ni bosing — Telegram orqali avtomatik kirasiz, parol kerak emas.',
-    ctaKnown: "👇 Kerakli bo'limni tanlang.",
+    ctaKnown: "👇 Kabinetga o'tish uchun tugmani bosing.",
     help: [
       'ℹ️ <b>Bot imkoniyatlari</b>',
       '',
-      "🚀 <b>Kabinet</b> — e'lonlar, balans va statistika",
-      "📢 <b>Reklama berish</b> — yangi e'lon: matn, havola, joylashuv va budjet",
-      "💳 <b>Balansni to'ldirish</b> — Click, Payme, Uzum Bank yoki Paynet orqali",
-      "📊 <b>E'lonlarim</b> — holati va statistikasi",
+      "🚀 <b>Kabinet</b> — reklama berish, e'lonlar va statistika, balansni Click, Payme, Uzum Bank yoki Paynet orqali to'ldirish",
       '⭐ <b>Stars va Premium</b> — @StarsPaymee_bot orqali',
       '',
       "Kabinet Telegram orqali ochiladi — ro'yxatdan o'tish va parol kerak emas.",
@@ -65,12 +62,9 @@ const T = {
       '/help — yordam',
     ].join('\n'),
     fallback:
-      "🤖 Men tugmalar va buyruqlar orqali ishlayman — kerakli bo'limni tanlang 👇\n\nSavolingiz bo'lsa — «Qo'llab-quvvatlash» tugmasini bosing.",
+      "🤖 Hamma ish kabinetda — «Kabinetni ochish» tugmasini bosing 👇\n\nSavolingiz bo'lsa — «Qo'llab-quvvatlash» tugmasini bosing.",
     buttons: {
       cabinet: '🚀 Kabinetni ochish',
-      newAd: '📢 Reklama berish',
-      topup: "💳 Balansni to'ldirish",
-      ads: "📊 E'lonlarim",
       stars: '⭐ Stars va Premium',
       support: "💬 Qo'llab-quvvatlash",
       site: '🌐 Sayt',
@@ -89,14 +83,11 @@ const T = {
     currency: 'сум',
     clientId: '🆔 Номер клиента',
     ctaNew: '👇 Нажмите «Открыть кабинет» — вход через Telegram, без пароля.',
-    ctaKnown: '👇 Выберите нужный раздел.',
+    ctaKnown: '👇 Нажмите кнопку, чтобы перейти в кабинет.',
     help: [
       'ℹ️ <b>Что умеет бот</b>',
       '',
-      '🚀 <b>Кабинет</b> — объявления, баланс и статистика',
-      '📢 <b>Создать рекламу</b> — новое объявление: текст, ссылка, площадки и бюджет',
-      '💳 <b>Пополнить баланс</b> — через Click, Payme, Uzum Bank или Paynet',
-      '📊 <b>Мои объявления</b> — статус и статистика',
+      '🚀 <b>Кабинет</b> — создание рекламы, объявления и статистика, пополнение баланса через Click, Payme, Uzum Bank или Paynet',
       '⭐ <b>Stars и Premium</b> — через @StarsPaymee_bot',
       '',
       'Кабинет открывается через Telegram — без регистрации и пароля.',
@@ -106,12 +97,9 @@ const T = {
       '/help — помощь',
     ].join('\n'),
     fallback:
-      '🤖 Я работаю через кнопки и команды — выберите нужный раздел 👇\n\nЕсть вопрос — нажмите «Поддержка».',
+      '🤖 Всё делается в кабинете — нажмите «Открыть кабинет» 👇\n\nЕсть вопрос — нажмите «Поддержка».',
     buttons: {
       cabinet: '🚀 Открыть кабинет',
-      newAd: '📢 Создать рекламу',
-      topup: '💳 Пополнить баланс',
-      ads: '📊 Мои объявления',
       stars: '⭐ Stars и Premium',
       support: '💬 Поддержка',
       site: '🌐 Сайт',
@@ -131,14 +119,11 @@ const T = {
     clientId: '🆔 Client ID',
     ctaNew:
       '👇 Tap “Open dashboard” — you sign in through Telegram, no password needed.',
-    ctaKnown: '👇 Choose a section.',
+    ctaKnown: '👇 Tap the button to open your dashboard.',
     help: [
       'ℹ️ <b>What this bot can do</b>',
       '',
-      '🚀 <b>Dashboard</b> — your ads, balance and statistics',
-      '📢 <b>Create an ad</b> — text, link, placements and budget',
-      '💳 <b>Top up balance</b> — via Click, Payme, Uzum Bank or Paynet',
-      '📊 <b>My ads</b> — status and statistics',
+      '🚀 <b>Dashboard</b> — create ads, track them and their statistics, top up via Click, Payme, Uzum Bank or Paynet',
       '⭐ <b>Stars & Premium</b> — via @StarsPaymee_bot',
       '',
       'The dashboard opens through Telegram — no sign-up or password needed.',
@@ -148,12 +133,9 @@ const T = {
       '/help — help',
     ].join('\n'),
     fallback:
-      '🤖 I work through buttons and commands — pick a section below 👇\n\nQuestions? Tap “Support”.',
+      '🤖 Everything happens in the dashboard — tap “Open dashboard” 👇\n\nQuestions? Tap “Support”.',
     buttons: {
       cabinet: '🚀 Open dashboard',
-      newAd: '📢 Create an ad',
-      topup: '💳 Top up balance',
-      ads: '📊 My ads',
       stars: '⭐ Stars & Premium',
       support: '💬 Support',
       site: '🌐 Website',
@@ -198,31 +180,24 @@ type InlineButton = { text: string } & (
   { web_app: { url: string } } | { url: string }
 );
 
-/** Kabinetning Mini App kirishi; `next` — kirgandan keyin ochiladigan sahifa. */
-function appUrl(frontendUrl: string, next?: string) {
-  const url = new URL('/app', frontendUrl);
-  if (next) url.searchParams.set('next', next);
-  return url.toString();
-}
-
-/** Har javob ostidagi menyu. `web_app` tugmalari faqat shaxsiy chatda ishlaydi. */
+/**
+ * Har javob ostidagi menyu. Mini App'ga bitta tugma — kabinet; reklama,
+ * to'ldirish va e'lonlar o'sha yerda. `web_app` faqat shaxsiy chatda ishlaydi.
+ */
 export function menuKeyboard(
   lang: BotLang,
   frontendUrl: string,
 ): { inline_keyboard: InlineButton[][] } {
   const b = T[lang].buttons;
-  const app = (text: string, next?: string): InlineButton => ({
-    text,
-    web_app: { url: appUrl(frontendUrl, next) },
-  });
   return {
     inline_keyboard: [
-      [app(b.cabinet)],
       [
-        app(b.newAd, '/dashboard/ads/new'),
-        app(b.topup, '/dashboard/balance/topup'),
+        {
+          text: b.cabinet,
+          web_app: { url: new URL('/app', frontendUrl).toString() },
+        },
       ],
-      [app(b.ads, '/dashboard/ads'), { text: b.stars, url: STARSPAYMEE_URL }],
+      [{ text: b.stars, url: STARSPAYMEE_URL }],
       [
         { text: b.support, url: SUPPORT_URL },
         { text: b.site, url: new URL(`/${lang}`, frontendUrl).toString() },

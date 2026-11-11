@@ -58,15 +58,16 @@ describe('bot-texts', () => {
     expect(startMessage('uz', '  ')).toMatch(/^👋 Assalomu alaykum!\n/);
   });
 
-  it('menyu: kabinet sahifalari Mini App orqali, sayt tilga mos', () => {
+  it("menyu: Mini App'ga bitta tugma (kabinet), sayt tilga mos", () => {
     const kb = menuKeyboard('en', 'https://osontarget.uz');
     const buttons = kb.inline_keyboard.flat();
-    expect(buttons).toContainEqual({
-      text: '💳 Top up balance',
-      web_app: {
-        url: 'https://osontarget.uz/app?next=%2Fdashboard%2Fbalance%2Ftopup',
+    expect(buttons.filter((b) => 'web_app' in b)).toEqual([
+      {
+        text: '🚀 Open dashboard',
+        web_app: { url: 'https://osontarget.uz/app' },
       },
-    });
+    ]);
+    expect(buttons[0]).toHaveProperty('web_app');
     expect(buttons).toContainEqual({
       text: '🌐 Website',
       url: 'https://osontarget.uz/en',

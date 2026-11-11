@@ -132,18 +132,9 @@ describe('Telegram bot webhook (e2e)', () => {
     expect(r.text).toContain('Здравствуйте, <b>Ali</b>!');
     expect(r.text).toContain('Click, Payme, Uzum Bank или Paynet');
 
+    // Mini App'ga bitta tugma — kabinet (reklama, to'ldirish, e'lonlar ichida).
     const apps = r.buttons.flatMap((b) => (b.web_app ? [b.web_app.url] : []));
-    const app = (next?: string) => {
-      const u = new URL('/app', frontendUrl);
-      if (next) u.searchParams.set('next', next);
-      return u.toString();
-    };
-    expect(apps).toEqual([
-      app(),
-      app('/dashboard/ads/new'),
-      app('/dashboard/balance/topup'),
-      app('/dashboard/ads'),
-    ]);
+    expect(apps).toEqual([new URL('/app', frontendUrl).toString()]);
     const links = r.buttons.flatMap((b) => (b.url ? [b.url] : []));
     expect(links).toEqual([
       'https://t.me/StarsPaymee_bot/starspaymee?startapp=s100-0-0-ot_stars_bot',
@@ -174,7 +165,7 @@ describe('Telegram bot webhook (e2e)', () => {
   it("boshqa xabar — qisqa ko'rsatma va o'sha menyu (til yo'q → uz)", async () => {
     await send(update('salom, reklama qancha turadi?')).expect(200);
     const r = reply();
-    expect(r.text).toContain('tugmalar va buyruqlar');
+    expect(r.text).toContain('Hamma ish kabinetda');
     expect(r.buttons[0].web_app?.url).toBe(
       new URL('/app', frontendUrl).toString(),
     );
